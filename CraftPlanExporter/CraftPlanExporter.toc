@@ -1,0 +1,10 @@
+## Interface: 120000, 120001, 120005
+## Title: CraftPlan Exporter
+## Notes: Exports CraftSim recipe profit and reagent allocation data for local craft planning.
+## Author: etsii + Codex
+## Version: 0.3.0
+## Dependencies: Blizzard_Professions
+## OptionalDeps: CraftSim, Auctionator
+## SavedVariables: CraftPlanExporterDB
+
+Main.lua

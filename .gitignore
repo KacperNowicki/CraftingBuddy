@@ -1,0 +1,28 @@
+# Local app/config/runtime output
+craft-plan-app.config.json
+runtime/
+dist/
+report/
+output/
+.playwright-cli/
+
+# Research/cache folders from local development
+CraftSim/
+Auctionator/
+backups/
+data/goblin-js/
+data/wow-ui-source/
+data/goblin-market-probe.html
+
+# Dependencies and package-manager output
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
