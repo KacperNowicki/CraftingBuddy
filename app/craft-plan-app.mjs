@@ -357,12 +357,42 @@ async function applyStagedUpdate() {
   }
 
   const scriptPath = path.join(UPDATE_DIR, "apply-update.ps1");
+  const logPath = path.join(UPDATE_DIR, "apply-update.log");
   const script = [
-    "param([string]$Source,[string]$Target,[int]$Pid)",
-    "Start-Sleep -Milliseconds 800",
-    "try { Wait-Process -Id $Pid -Timeout 45 -ErrorAction SilentlyContinue } catch {}",
-    "Copy-Item -LiteralPath $Source -Destination $Target -Force",
-    "Start-Process -FilePath $Target",
+    "param([string]$Source,[string]$Target,[int]$AppPid,[string]$LogPath)",
+    "$ErrorActionPreference = 'Stop'",
+    "function Write-UpdaterLog([string]$Message) {",
+    "  $line = ('{0} {1}' -f (Get-Date -Format o), $Message)",
+    "  Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8",
+    "}",
+    "Write-UpdaterLog ('Updater started. Source={0} Target={1} AppPid={2}' -f $Source, $Target, $AppPid)",
+    "$deadline = (Get-Date).AddSeconds(60)",
+    "while ((Get-Date) -lt $deadline) {",
+    "  $app = Get-Process -Id $AppPid -ErrorAction SilentlyContinue",
+    "  if (-not $app) { break }",
+    "  Start-Sleep -Milliseconds 500",
+    "}",
+    "if (Get-Process -Id $AppPid -ErrorAction SilentlyContinue) {",
+    "  Write-UpdaterLog 'App process did not exit before timeout. Continuing with copy retries.'",
+    "}",
+    "$copied = $false",
+    "for ($attempt = 1; $attempt -le 30; $attempt++) {",
+    "  try {",
+    "    Copy-Item -LiteralPath $Source -Destination $Target -Force -ErrorAction Stop",
+    "    Write-UpdaterLog ('Copied update on attempt {0}.' -f $attempt)",
+    "    $copied = $true",
+    "    break",
+    "  } catch {",
+    "    Write-UpdaterLog ('Copy attempt {0} failed: {1}' -f $attempt, $_.Exception.Message)",
+    "    Start-Sleep -Milliseconds 500",
+    "  }",
+    "}",
+    "if (-not $copied) {",
+    "  Write-UpdaterLog 'Failed to copy update. Restart aborted.'",
+    "  exit 1",
+    "}",
+    "Start-Process -FilePath $Target -WorkingDirectory (Split-Path -Parent $Target)",
+    "Write-UpdaterLog 'Restarted updated app.'",
   ].join("\r\n");
   await writeFile(scriptPath, script, "utf8");
   spawn("powershell.exe", [
@@ -374,9 +404,10 @@ async function applyStagedUpdate() {
     staged.path,
     process.execPath,
     String(process.pid),
+    logPath,
   ], { detached: true, stdio: "ignore", windowsHide: true }).unref();
   setTimeout(() => process.exit(0), 300);
-  return { ok: true, restarting: true, staged };
+  return { ok: true, restarting: true, staged, logPath };
 }
 
 async function fetchLatestRelease() {

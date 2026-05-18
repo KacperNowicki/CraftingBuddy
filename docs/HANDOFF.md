@@ -37,7 +37,7 @@ npm run build:exe
 Release updater check:
 
 ```powershell
-gh release create v0.3.0 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.0" --notes "Initial updater-capable build."
+gh release create v0.3.1 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.1" --notes "Updater-capable Windows build."
 ```
 
 The app updater reads GitHub Releases and expects the asset to be named `CraftPlanApp.exe`.
