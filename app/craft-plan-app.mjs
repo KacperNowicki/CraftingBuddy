@@ -357,6 +357,7 @@ async function applyStagedUpdate() {
   }
 
   const scriptPath = path.join(UPDATE_DIR, "apply-update.ps1");
+  const launcherPath = path.join(UPDATE_DIR, "apply-update.cmd");
   const logPath = path.join(UPDATE_DIR, "apply-update.log");
   const script = [
     "param([string]$Source,[string]$Target,[int]$AppPid,[string]$LogPath)",
@@ -395,19 +396,28 @@ async function applyStagedUpdate() {
     "Write-UpdaterLog 'Restarted updated app.'",
   ].join("\r\n");
   await writeFile(scriptPath, script, "utf8");
-  spawn("powershell.exe", [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    scriptPath,
-    staged.path,
-    process.execPath,
-    String(process.pid),
-    logPath,
-  ], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-  setTimeout(() => process.exit(0), 300);
-  return { ok: true, restarting: true, staged, logPath };
+  const launcher = [
+    "@echo off",
+    [
+      "start",
+      "\"CraftingBuddy Updater\"",
+      "/min",
+      "powershell.exe",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      quoteCmdArg(scriptPath),
+      quoteCmdArg(staged.path),
+      quoteCmdArg(process.execPath),
+      quoteCmdArg(String(process.pid)),
+      quoteCmdArg(logPath),
+    ].join(" "),
+  ].join("\r\n");
+  await writeFile(launcherPath, launcher, "utf8");
+  spawn("cmd.exe", ["/d", "/s", "/c", launcherPath], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  setTimeout(() => process.exit(0), 1500);
+  return { ok: true, restarting: true, staged, launcherPath, logPath };
 }
 
 async function fetchLatestRelease() {
@@ -454,6 +464,10 @@ function compareVersions(a, b) {
     if (l !== r) return l > r ? 1 : -1;
   }
   return 0;
+}
+
+function quoteCmdArg(value) {
+  return `"${String(value).replace(/"/g, "\"\"")}"`;
 }
 
 async function findCraftPlanSavedVariables() {

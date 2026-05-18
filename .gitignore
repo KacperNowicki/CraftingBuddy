@@ -2,6 +2,7 @@
 craft-plan-app.config.json
 runtime/
 updates/
+live-update-test/
 dist/
 report/
 output/
