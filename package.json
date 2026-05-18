@@ -1,6 +1,6 @@
 {
   "name": "craftingbuddy",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "license": "MIT",
   "homepage": "https://kacpernowicki.github.io/CraftingBuddy/",
   "repository": {
@@ -12,12 +12,14 @@
   "scripts": {
     "app": "node app/craft-plan-app.mjs",
     "check": "node --check app/craft-plan-app.mjs && node --check scripts/scrape-goblin.mjs && node --check scripts/scrape-undermine-api.mjs && node --check scripts/build-craft-plan.mjs",
-    "build:exe": "npx --yes @yao-pkg/pkg . --targets node20-win-x64 --output dist/CraftPlanApp.exe --no-bytecode --public --fallback-to-source"
+    "generate:icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.ps1",
+    "build:exe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-exe.ps1"
   },
   "pkg": {
     "assets": [
       "CraftPlanExporter/CraftPlanExporter.toc",
       "CraftPlanExporter/Main.lua",
+      "CraftPlanExporter/Media/CraftingBuddyIcon.tga",
       "data/undermine-silvermoon-eu-crafting.json",
       "scripts/*.mjs"
     ]

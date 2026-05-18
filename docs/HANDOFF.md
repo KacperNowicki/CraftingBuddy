@@ -14,6 +14,7 @@ The project contains:
 - `app/` - the local Windows helper app served by Node.
 - `scripts/` - market scraping and report generation.
 - `data/` - small sample market snapshots used for development/fallback packaging.
+- `assets/icons/` - generated app icon candidates, the selected SVG/PNG/ICO, and preview sheet.
 - `docs/` - architecture, data, user-flow, and GitHub Pages documentation.
 
 Generated outputs are intentionally ignored: `dist/`, `report/`, `runtime/`, `output/`, `.playwright-cli/`, local config, and copied third-party addon repos.
@@ -28,6 +29,12 @@ Run after meaningful changes:
 npm run check
 ```
 
+Regenerate app/addon icon assets after changing the icon script:
+
+```powershell
+npm run generate:icons
+```
+
 Before publishing a Windows build:
 
 ```powershell
@@ -37,10 +44,12 @@ npm run build:exe
 Release updater check:
 
 ```powershell
-gh release create v0.3.4 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.4" --notes "Updater-capable Windows build."
+gh release create v0.3.5 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.5" --notes "Adds CraftingBuddy app and addon icons."
 ```
 
 The app updater reads GitHub Releases and expects the asset to be named `CraftPlanApp.exe`.
+
+`npm run build:exe` now stamps `assets/icons/craftingbuddy-icon.ico` into the Windows executable.
 
 Report generation from source expects a local WoW SavedVariables export:
 
@@ -54,6 +63,7 @@ node .\scripts\build-craft-plan.mjs
 - Auctionator remains untouched. CraftingBuddy can create shopping-list payloads that the addon passes into Auctionator.
 - The app writes local config/runtime/report files next to the executable/source checkout, not AppData.
 - The app updater stages release assets in `updates/` and only applies them from the packaged exe.
+- The selected icon is "Gem Spark" from `assets/icons/preview.html`; the addon minimap button uses the generated TGA in `CraftPlanExporter/Media/`.
 - Undermine API keys are optional and stored through Windows user-scope protection when possible.
 - Goblin Exchange remains a no-key fallback.
 - Weekly concentration planning excludes very low movement markets by default.

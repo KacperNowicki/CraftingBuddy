@@ -1929,7 +1929,7 @@ function Exporter:CreateMinimapButton()
     button.background:SetPoint("CENTER", button, "CENTER")
 
     button.icon = button:CreateTexture(nil, "ARTWORK")
-    button.icon:SetTexture("Interface\\Icons\\Trade_Engineering")
+    button.icon:SetTexture("Interface\\AddOns\\CraftPlanExporter\\Media\\CraftingBuddyIcon")
     button.icon:SetSize(18, 18)
     button.icon:SetPoint("CENTER", button, "CENTER")
 

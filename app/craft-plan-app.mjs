@@ -22,6 +22,7 @@ const REPORT_HTML = path.join(OUTPUT_DIR, "craft-plan-report.html");
 const REPORT_JSON = path.join(OUTPUT_DIR, "craft-plan-report.json");
 const UPDATE_REPO = "KacperNowicki/CraftingBuddy";
 const UPDATE_ASSET_NAME = "CraftPlanApp.exe";
+const APP_ICON_HREF = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20256%20256%22%3E%0A%20%20%3Crect%20x%3D%2210%22%20y%3D%2210%22%20width%3D%22236%22%20height%3D%22236%22%20rx%3D%2246%22%20fill%3D%22%2307100c%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M10%2056a46%2046%200%200%201%2046-46h144a46%2046%200%200%201%2046%2046v144a46%2046%200%200%201-46%2046H56a46%2046%200%200%201-46-46z%22%20fill%3D%22url%28%23bg%29%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22128%22%20cy%3D%22131%22%20r%3D%2276%22%20fill%3D%22none%22%20stroke%3D%22%23e4b65e%22%20stroke-width%3D%2211%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M128%2042%20190%20108%20128%20206%2066%20108Z%22%20fill%3D%22%2351d6a8%22%20stroke%3D%22%23f7efd6%22%20stroke-width%3D%224%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M128%2042%20190%20108%20128%20118Z%22%20fill%3D%22%23fff%22%20opacity%3D%22.42%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M66%20108%20128%20206%20128%20118Z%22%20fill%3D%22%23e4b65e%22%20opacity%3D%22.74%22%2F%3E%0A%20%20%3Cpath%20d%3D%22m193%2042%2011%2028%2028%2011-28%2011-11%2028-11-28-28-11%2028-11z%22%20fill%3D%22%23f7efd6%22%2F%3E%0A%20%20%3Cdefs%3E%3ClinearGradient%20id%3D%22bg%22%20x1%3D%2228%22%20x2%3D%22226%22%20y1%3D%2224%22%20y2%3D%22232%22%3E%3Cstop%20stop-color%3D%22%2307100c%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23182219%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%0A%3C%2Fsvg%3E";
 
 let config = await loadConfig();
 let lastJob = null;
@@ -213,6 +214,11 @@ async function installAddon() {
   for (const fileName of ["CraftPlanExporter.toc", "Main.lua"]) {
     await writeFile(path.join(target, fileName), await readFile(path.join(ADDON_SOURCE, fileName), "utf8"), "utf8");
   }
+  await mkdir(path.join(target, "Media"), { recursive: true });
+  await writeFile(
+    path.join(target, "Media", "CraftingBuddyIcon.tga"),
+    await readFile(path.join(ADDON_SOURCE, "Media", "CraftingBuddyIcon.tga")),
+  );
   return { ok: true, addonPath: target };
 }
 
@@ -701,7 +707,7 @@ function renderApp() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CraftingBuddy</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23060807'/%3E%3Cpath d='M18 38 32 12l14 26-14 14z' fill='%234ed0a4'/%3E%3Cpath d='M25 38h14l-7 9z' fill='%23e0b35a'/%3E%3C/svg%3E">
+  <link rel="icon" href="${APP_ICON_HREF}">
   <style>
     :root {
       color-scheme: dark;

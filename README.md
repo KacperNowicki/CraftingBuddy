@@ -14,6 +14,7 @@ It is not a bot and it does not post auctions. It turns your own CraftSim scan p
 - Pulls market data from Undermine API when you save a key, or Goblin Exchange as fallback.
 - Builds a local dark-mode report with batch crafts, concentration crafts, weekly concentration planning, and Auctionator shopping-list export.
 - Checks GitHub Releases for app updates and stages new builds locally before install.
+- Uses the same CraftingBuddy gem icon in the Windows app and addon minimap button.
 
 ## Simple Flow
 
@@ -41,6 +42,7 @@ The updater only installs `CraftPlanApp.exe` from this repository's GitHub Relea
 ```powershell
 npm run app
 npm run check
+npm run generate:icons
 node .\scripts\build-craft-plan.mjs
 npm run build:exe
 ```
