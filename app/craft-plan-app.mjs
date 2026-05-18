@@ -41,7 +41,12 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/set-undermine-key") return sendJson(response, await setUndermineKey(await readJson(request)));
     if (request.method === "POST" && url.pathname === "/api/install-addon") return sendJson(response, await installAddon());
     if (request.method === "POST" && url.pathname === "/api/update/download") return sendJson(response, await downloadUpdate());
-    if (request.method === "POST" && url.pathname === "/api/update/apply") return sendJson(response, await applyStagedUpdate());
+    if (request.method === "POST" && url.pathname === "/api/update/apply") {
+      const payload = await applyStagedUpdate();
+      sendJson(response, payload);
+      if (payload?.ok && payload?.restarting) scheduleExitAfterResponse(response);
+      return;
+    }
     if (request.method === "POST" && (url.pathname === "/api/generate" || url.pathname === "/regenerate")) {
       return sendJson(response, await generateReport());
     }
@@ -416,7 +421,6 @@ async function applyStagedUpdate() {
   ].join("\r\n");
   await writeFile(launcherPath, launcher, "utf8");
   spawn("cmd.exe", ["/d", "/s", "/c", launcherPath], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-  setTimeout(() => process.exit(0), 1500);
   return { ok: true, restarting: true, staged, launcherPath, logPath };
 }
 
@@ -468,6 +472,15 @@ function compareVersions(a, b) {
 
 function quoteCmdArg(value) {
   return `"${String(value).replace(/"/g, "\"\"")}"`;
+}
+
+function scheduleExitAfterResponse(response) {
+  response.once("finish", () => {
+    setTimeout(() => {
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 1500).unref();
+    }, 250).unref();
+  });
 }
 
 async function findCraftPlanSavedVariables() {
