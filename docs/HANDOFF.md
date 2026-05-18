@@ -18,6 +18,8 @@ The project contains:
 
 Generated outputs are intentionally ignored: `dist/`, `report/`, `runtime/`, `output/`, `.playwright-cli/`, local config, and copied third-party addon repos.
 
+Updater downloads are also ignored: `updates/`.
+
 ## Verified Commands
 
 Run after meaningful changes:
@@ -32,6 +34,14 @@ Before publishing a Windows build:
 npm run build:exe
 ```
 
+Release updater check:
+
+```powershell
+gh release create v0.3.0 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.0" --notes "Initial updater-capable build."
+```
+
+The app updater reads GitHub Releases and expects the asset to be named `CraftPlanApp.exe`.
+
 Report generation from source expects a local WoW SavedVariables export:
 
 ```powershell
@@ -43,6 +53,7 @@ node .\scripts\build-craft-plan.mjs
 - CraftSim remains untouched. CraftPlan Exporter reads CraftSim data through available Lua APIs and saved UI state.
 - Auctionator remains untouched. CraftingBuddy can create shopping-list payloads that the addon passes into Auctionator.
 - The app writes local config/runtime/report files next to the executable/source checkout, not AppData.
+- The app updater stages release assets in `updates/` and only applies them from the packaged exe.
 - Undermine API keys are optional and stored through Windows user-scope protection when possible.
 - Goblin Exchange remains a no-key fallback.
 - Weekly concentration planning excludes very low movement markets by default.
@@ -55,6 +66,7 @@ node .\scripts\build-craft-plan.mjs
 - Multi-realm support depends on SavedVariables realm detection plus market-source coverage.
 - The current sample snapshots are Silvermoon EU development data, not universal defaults.
 - Packaging should be checked from a fresh clone before public releases.
+- A release must include `CraftPlanApp.exe` or the updater will report that no installable asset exists.
 
 ## Next Useful Work
 

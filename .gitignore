@@ -1,6 +1,7 @@
 # Local app/config/runtime output
 craft-plan-app.config.json
 runtime/
+updates/
 dist/
 report/
 output/

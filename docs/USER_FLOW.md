@@ -23,6 +23,18 @@ Then the player can add mats to a shopping list, copy it, paste it into the addo
 9. Open the report.
 10. Craft from the top down, respecting market confidence.
 
+## Updating The App
+
+The app has an **App updates** panel.
+
+Simple user wording:
+
+1. Press **Check update**.
+2. If a new version exists, press **Download**.
+3. When download finishes, press **Restart to install**.
+
+In source/developer mode, update checking and downloading work, but install is disabled. Only `CraftPlanApp.exe` can replace itself.
+
 ## App Copy Rules
 
 Use player language:
@@ -32,6 +44,7 @@ Use player language:
 - Say "I reloaded", not "refresh SavedVariables".
 - Say "Generate report", not "build artifact".
 - Say "Market source", not "data provider adapter".
+- Say "Restart to install", not "apply staged binary".
 
 ## Report Rules
 

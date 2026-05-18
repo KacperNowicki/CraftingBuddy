@@ -46,6 +46,8 @@ Responsibilities:
 - Store optional Undermine API key locally.
 - Fetch or refresh market snapshots.
 - Generate the report.
+- Check GitHub Releases for a newer `CraftPlanApp.exe`.
+- Download a release asset into `updates/` and, when running as the packaged exe, restart to replace the app.
 
 Storage:
 
@@ -53,6 +55,21 @@ Storage:
 - `data/` next to the executable/source checkout for refreshed market snapshots.
 - `report/` next to the executable/source checkout for generated reports.
 - `runtime/` next to the executable/source checkout for packaged script extraction.
+- `updates/` next to the executable/source checkout for staged updater downloads.
+
+## Update Boundary
+
+The updater only trusts the public GitHub Releases feed for `KacperNowicki/CraftingBuddy`.
+
+Updater flow:
+
+1. `GET /api/update/check` reads the latest GitHub release.
+2. The app compares the release tag with the local `package.json` version.
+3. `POST /api/update/download` downloads the release asset named `CraftPlanApp.exe` into `updates/`.
+4. The staged download is recorded in `updates/latest.json` with size, version, source release, and SHA-256.
+5. `POST /api/update/apply` works only in the packaged exe. It starts a small PowerShell script, exits the running app, copies the staged exe over the current exe, and starts it again.
+
+Source mode can check and download updates for testing, but it cannot replace source files.
 
 ## Market Sources
 

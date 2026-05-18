@@ -1,21 +1,27 @@
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { access, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PACKAGE = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
+const APP_VERSION = String(PACKAGE.version || "0.0.0");
 const APP_DIR = process.pkg ? path.dirname(process.execPath) : ROOT;
 const ADDON_SOURCE = path.join(ROOT, "CraftPlanExporter");
 const CONFIG_DIR = APP_DIR;
 const CONFIG_PATH = path.join(CONFIG_DIR, "craft-plan-app.config.json");
 const OUTPUT_DIR = path.join(APP_DIR, "report");
 const DATA_DIR = path.join(APP_DIR, "data");
+const UPDATE_DIR = path.join(APP_DIR, "updates");
 const DEFAULT_PORT = 8791;
 const DEFAULT_CATALOG = path.join(ROOT, "data", "undermine-silvermoon-eu-crafting.json");
 const REPORT_HTML = path.join(OUTPUT_DIR, "craft-plan-report.html");
 const REPORT_JSON = path.join(OUTPUT_DIR, "craft-plan-report.json");
+const UPDATE_REPO = "KacperNowicki/CraftingBuddy";
+const UPDATE_ASSET_NAME = "CraftPlanApp.exe";
 
 let config = await loadConfig();
 let lastJob = null;
@@ -29,10 +35,13 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/") return sendHtml(response, renderApp());
     if (request.method === "GET" && url.pathname === "/report") return sendFile(response, REPORT_HTML, "text/html; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/status") return sendJson(response, await getStatus());
+    if (request.method === "GET" && url.pathname === "/api/update/check") return sendJson(response, await checkForUpdate());
     if (request.method === "POST" && url.pathname === "/api/choose-wow-folder") return sendJson(response, await chooseWowFolder());
     if (request.method === "POST" && url.pathname === "/api/set-wow-folder") return sendJson(response, await setWowFolder(await readJson(request)));
     if (request.method === "POST" && url.pathname === "/api/set-undermine-key") return sendJson(response, await setUndermineKey(await readJson(request)));
     if (request.method === "POST" && url.pathname === "/api/install-addon") return sendJson(response, await installAddon());
+    if (request.method === "POST" && url.pathname === "/api/update/download") return sendJson(response, await downloadUpdate());
+    if (request.method === "POST" && url.pathname === "/api/update/apply") return sendJson(response, await applyStagedUpdate());
     if (request.method === "POST" && (url.pathname === "/api/generate" || url.pathname === "/regenerate")) {
       return sendJson(response, await generateReport());
     }
@@ -132,6 +141,12 @@ async function getStatus() {
   const reportExists = await exists(REPORT_HTML);
   return {
     ok: true,
+    app: {
+      version: APP_VERSION,
+      packaged: Boolean(process.pkg),
+      exePath: process.pkg ? process.execPath : null,
+    },
+    update: await getStagedUpdateInfo(),
     config: {
       ...config,
       undermineApiKey: undefined,
@@ -257,6 +272,156 @@ async function generateReport() {
     lastJob = { running: false, ok: false, finishedAt: new Date().toISOString(), error: error.message || String(error) };
     throw error;
   }
+}
+
+async function checkForUpdate() {
+  const release = await fetchLatestRelease();
+  if (!release) {
+    return {
+      ok: true,
+      currentVersion: APP_VERSION,
+      packaged: Boolean(process.pkg),
+      available: false,
+      message: "No GitHub release is published yet.",
+    };
+  }
+  const latestVersion = normalizeVersion(release.tag_name || release.name || "");
+  const asset = findUpdateAsset(release);
+  const compare = compareVersions(latestVersion, APP_VERSION);
+  return {
+    ok: true,
+    currentVersion: APP_VERSION,
+    packaged: Boolean(process.pkg),
+    available: compare > 0,
+    upToDate: compare <= 0,
+    latestVersion,
+    releaseName: release.name || release.tag_name || "",
+    releaseUrl: release.html_url || "",
+    publishedAt: release.published_at || "",
+    notes: release.body || "",
+    asset: asset ? {
+      name: asset.name,
+      size: asset.size,
+      downloadUrl: asset.browser_download_url,
+      updatedAt: asset.updated_at || "",
+    } : null,
+    staged: await getStagedUpdateInfo(),
+    message: asset
+      ? compare > 0
+        ? `Version ${latestVersion} is ready to download.`
+        : `You are on the newest release (${APP_VERSION}).`
+      : "The latest release does not include CraftPlanApp.exe yet.",
+  };
+}
+
+async function downloadUpdate() {
+  const release = await fetchLatestRelease();
+  if (!release) throw new Error("No GitHub release is published yet.");
+  const latestVersion = normalizeVersion(release.tag_name || release.name || "");
+  const asset = findUpdateAsset(release);
+  if (!asset?.browser_download_url) throw new Error("The latest release does not include CraftPlanApp.exe.");
+  await mkdir(UPDATE_DIR, { recursive: true });
+  const target = path.join(UPDATE_DIR, `CraftPlanApp-${latestVersion || "latest"}.exe`);
+  const part = `${target}.download`;
+  const response = await fetch(asset.browser_download_url, {
+    headers: { "user-agent": `CraftingBuddy/${APP_VERSION}` },
+  });
+  if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length < 1024 * 1024) throw new Error("Downloaded updater file is unexpectedly small.");
+  await writeFile(part, bytes);
+  await rename(part, target);
+  const staged = {
+    version: latestVersion,
+    sourceRelease: release.html_url || "",
+    assetName: asset.name,
+    assetSize: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    stagedAt: new Date().toISOString(),
+    path: target,
+  };
+  await writeFile(path.join(UPDATE_DIR, "latest.json"), JSON.stringify(staged, null, 2), "utf8");
+  return { ok: true, staged, message: `Downloaded ${asset.name} ${latestVersion}.` };
+}
+
+async function applyStagedUpdate() {
+  const staged = await getStagedUpdateInfo();
+  if (!staged?.path || !(await exists(staged.path))) throw new Error("No staged update was found.");
+  if (!process.pkg) {
+    return {
+      ok: false,
+      sourceMode: true,
+      staged,
+      error: "Install is only available from CraftPlanApp.exe. Source mode can check and download updates, but it will not replace node app files.",
+    };
+  }
+
+  const scriptPath = path.join(UPDATE_DIR, "apply-update.ps1");
+  const script = [
+    "param([string]$Source,[string]$Target,[int]$Pid)",
+    "Start-Sleep -Milliseconds 800",
+    "try { Wait-Process -Id $Pid -Timeout 45 -ErrorAction SilentlyContinue } catch {}",
+    "Copy-Item -LiteralPath $Source -Destination $Target -Force",
+    "Start-Process -FilePath $Target",
+  ].join("\r\n");
+  await writeFile(scriptPath, script, "utf8");
+  spawn("powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    scriptPath,
+    staged.path,
+    process.execPath,
+    String(process.pid),
+  ], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  setTimeout(() => process.exit(0), 300);
+  return { ok: true, restarting: true, staged };
+}
+
+async function fetchLatestRelease() {
+  const response = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
+    headers: {
+      accept: "application/vnd.github+json",
+      "user-agent": `CraftingBuddy/${APP_VERSION}`,
+    },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GitHub update check failed: HTTP ${response.status}`);
+  return await response.json();
+}
+
+function findUpdateAsset(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  return assets.find((asset) => asset.name === UPDATE_ASSET_NAME) ||
+    assets.find((asset) => String(asset.name || "").toLowerCase().endsWith(".exe")) ||
+    null;
+}
+
+async function getStagedUpdateInfo() {
+  try {
+    const staged = JSON.parse(await readFile(path.join(UPDATE_DIR, "latest.json"), "utf8"));
+    if (!staged.path || !(await exists(staged.path))) return null;
+    return staged;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeVersion(value) {
+  return String(value || "").trim().replace(/^v/i, "");
+}
+
+function compareVersions(a, b) {
+  const left = normalizeVersion(a).split(/[.-]/).map((part) => Number.parseInt(part, 10));
+  const right = normalizeVersion(b).split(/[.-]/).map((part) => Number.parseInt(part, 10));
+  const length = Math.max(left.length, right.length, 3);
+  for (let index = 0; index < length; index += 1) {
+    const l = Number.isFinite(left[index]) ? left[index] : 0;
+    const r = Number.isFinite(right[index]) ? right[index] : 0;
+    if (l !== r) return l > r ? 1 : -1;
+  }
+  return 0;
 }
 
 async function findCraftPlanSavedVariables() {
@@ -589,6 +754,21 @@ function renderApp() {
     }
     .help-box ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
     .help-box li { margin: 4px 0; }
+    .update-box {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+    .update-box p { font-size: 13px; }
+    .update-status {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #090c0a;
+      color: var(--muted);
+      min-height: 42px;
+    }
     @media (max-width: 860px) {
       header, .layout, .step, .next-card { grid-template-columns: 1fr; }
       header { align-items: stretch; }
@@ -675,6 +855,16 @@ function renderApp() {
             <button id="save-undermine-key" class="secondary">Save key</button>
           </div>
         </div>
+        <div class="update-box">
+          <h3>App updates</h3>
+          <p>Checks the public GitHub release for a newer CraftPlanApp.exe. Downloads are staged locally before install.</p>
+          <div class="actions">
+            <button id="check-update" class="secondary">Check update</button>
+            <button id="download-update" class="secondary" disabled>Download</button>
+            <button id="apply-update" class="gold" disabled>Restart to install</button>
+          </div>
+          <div id="update-status" class="update-status">Current version: ${APP_VERSION}</div>
+        </div>
         <div class="actions">
           <button id="open-report" class="secondary">Open report</button>
           <button id="refresh-status-2" class="secondary">Refresh</button>
@@ -694,6 +884,7 @@ function renderApp() {
   <script>
     const $ = (selector) => document.querySelector(selector);
     let state = null;
+    let updateInfo = null;
 
     async function api(path, body) {
       const response = await fetch(path, {
@@ -754,6 +945,7 @@ function renderApp() {
       if (state.lastJob?.running) setLog(state.lastJob.message || "Working...");
       else if (state.lastJob?.ok) setLog("Report generated for " + state.lastJob.realm.label + " via " + (state.lastJob.marketSource || "market data") + ". Matched " + state.lastJob.matchedProfitRecords + "/" + state.lastJob.snapshotItems + " profit rows.");
       else if (state.lastJob?.error) setLog(state.lastJob.error, "bad");
+      renderUpdateBox();
     }
 
     function getNextAction(status) {
@@ -821,6 +1013,25 @@ function renderApp() {
 
     function setBusy(active) {
       for (const button of document.querySelectorAll("button")) button.disabled = active;
+      if (!active) renderUpdateBox();
+    }
+
+    function renderUpdateBox() {
+      const staged = updateInfo?.staged || state?.update || null;
+      const current = state?.app?.version || updateInfo?.currentVersion || "unknown";
+      const packaged = Boolean(state?.app?.packaged);
+      const status = updateInfo
+        ? updateInfo.available
+          ? "Update ready: " + updateInfo.latestVersion + ". Download it when you are done using the app."
+          : updateInfo.asset
+            ? "You are on the newest release: " + current + "."
+            : updateInfo.message || "No update asset found."
+        : staged
+          ? "Update " + staged.version + " is downloaded and ready."
+          : "Current version: " + current + ".";
+      $("#update-status").textContent = status + (packaged ? "" : " Source mode can check/download, but install only works in the exe.");
+      $("#download-update").disabled = !(updateInfo?.asset);
+      $("#apply-update").disabled = !(staged && packaged);
     }
 
     $("#choose-wow").addEventListener("click", async () => {
@@ -847,6 +1058,46 @@ function renderApp() {
       } catch (error) {
         setLog(error.message, "bad");
       } finally {
+        setBusy(false);
+      }
+    });
+
+    $("#check-update").addEventListener("click", async () => {
+      setBusy(true);
+      try {
+        updateInfo = await api("/api/update/check");
+        renderUpdateBox();
+        setLog(updateInfo.message || "Update check finished.", updateInfo.available ? "good" : "");
+      } catch (error) {
+        setLog(error.message, "bad");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    $("#download-update").addEventListener("click", async () => {
+      setBusy(true);
+      try {
+        const result = await api("/api/update/download", {});
+        updateInfo = { ...(updateInfo || {}), staged: result.staged };
+        await refresh();
+        renderUpdateBox();
+        setLog(result.message || "Update downloaded.", "good");
+      } catch (error) {
+        setLog(error.message, "bad");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    $("#apply-update").addEventListener("click", async () => {
+      setBusy(true);
+      try {
+        const result = await api("/api/update/apply", {});
+        if (result.ok) setLog("Installing update. CraftingBuddy will restart.", "good");
+        else setLog(result.error || "Updater install is not available in this mode.", "bad");
+      } catch (error) {
+        setLog(error.message, "bad");
         setBusy(false);
       }
     });

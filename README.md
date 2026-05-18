@@ -13,6 +13,7 @@ It is not a bot and it does not post auctions. It turns your own CraftSim scan p
 - Reads your realm from the addon export.
 - Pulls market data from Undermine API when you save a key, or Goblin Exchange as fallback.
 - Builds a local dark-mode report with batch crafts, concentration crafts, weekly concentration planning, and Auctionator shopping-list export.
+- Checks GitHub Releases for app updates and stages new builds locally before install.
 
 ## Simple Flow
 
@@ -24,6 +25,16 @@ It is not a bot and it does not post auctions. It turns your own CraftSim scan p
 6. Type `/reload`.
 7. Click **Generate report**.
 8. Follow the report from the top down.
+
+## Updating
+
+Open the app and use **App updates**:
+
+1. Click **Check update**.
+2. Click **Download** when a newer release exists.
+3. Click **Restart to install**.
+
+The updater only installs `CraftPlanApp.exe` from this repository's GitHub Releases.
 
 ## From Source
 
