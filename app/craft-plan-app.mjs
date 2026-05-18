@@ -433,6 +433,7 @@ async function getStagedUpdateInfo() {
   try {
     const staged = JSON.parse(await readFile(path.join(UPDATE_DIR, "latest.json"), "utf8"));
     if (!staged.path || !(await exists(staged.path))) return null;
+    if (staged.version && compareVersions(staged.version, APP_VERSION) < 0) return null;
     return staged;
   } catch {
     return null;
