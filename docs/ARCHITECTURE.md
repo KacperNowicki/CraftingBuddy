@@ -1,0 +1,104 @@
+# Architecture
+
+CraftingBuddy has three local pieces: a WoW addon, a Windows helper app, and a generated HTML report.
+
+```mermaid
+flowchart LR
+  Player["Player in WoW"] --> AH["Auctionator AH scan"]
+  Player --> CPE["CraftPlan Exporter addon"]
+  CPE --> SV["CraftPlanExporter.lua SavedVariables"]
+  App["CraftingBuddy Windows app"] --> SV
+  App --> Market["Undermine API or Goblin Exchange"]
+  App --> Report["Local HTML report"]
+  Report --> Shopping["CPE shopping-list paste box"]
+  Shopping --> Auctionator["Auctionator shopping list"]
+```
+
+## Addon Boundary
+
+`CraftPlanExporter/` is a standalone WoW addon.
+
+Responsibilities:
+
+- Open a small in-game panel from the minimap.
+- Ask CraftSim for recipe/profit/variant data.
+- Save a full tested variant blob to `CraftPlanExporterDB`.
+- Save player realm metadata and current concentration when available.
+- Accept shopping-list payloads from the report and create Auctionator lists.
+
+Non-goals:
+
+- Do not patch CraftSim.
+- Do not patch Auctionator.
+- Do not scrape websites from inside WoW.
+- Do not try to be a full profession UI replacement.
+
+## Helper App Boundary
+
+`app/craft-plan-app.mjs` is a local Node HTTP app that opens in the user's browser.
+
+Responsibilities:
+
+- Find or let the user select the WoW folder.
+- Install `CraftPlanExporter` into `_retail_\Interface\AddOns`.
+- Read `CraftPlanExporter.lua` after `/reload`.
+- Detect player realm/region from addon metadata.
+- Store optional Undermine API key locally.
+- Fetch or refresh market snapshots.
+- Generate the report.
+
+Storage:
+
+- `craft-plan-app.config.json` next to the executable/source checkout.
+- `data/` next to the executable/source checkout for refreshed market snapshots.
+- `report/` next to the executable/source checkout for generated reports.
+- `runtime/` next to the executable/source checkout for packaged script extraction.
+
+## Market Sources
+
+Preferred source:
+
+- Undermine API, when the user provides a key.
+
+Fallback source:
+
+- Goblin Exchange data, without a key.
+
+The app should keep the source visible in the UI and report because price/movement confidence depends on it.
+
+## Report Boundary
+
+`scripts/build-craft-plan.mjs` builds:
+
+- `report/craft-plan-report.html`
+- `report/craft-plan-report.json`
+
+The report is intentionally static. It embeds the calculated JSON so it can be opened locally or served by the helper app.
+
+Report responsibilities:
+
+- Show batch crafts separately from concentration crafts.
+- Rank concentration variants by profit per concentration and budget fit.
+- Show market confidence using movement and stock.
+- Preserve exact reagent quality in craft paths and shopping-list payloads.
+- Hide dense optimizer tables by default.
+
+## Trust Model
+
+CraftingBuddy is local-first. It reads local WoW files and calls market APIs from the user's machine.
+
+Secrets:
+
+- Undermine API keys are never committed.
+- Saved keys are protected with Windows user-scope protection where available.
+- Status APIs must never return the raw key.
+
+Paths:
+
+- WoW folder selection must point to a folder containing `_retail_`.
+- Addon install writes only to `_retail_\Interface\AddOns\CraftPlanExporter`.
+
+Profit:
+
+- Profit is a calculation from current scan data, not a promise.
+- The UI should surface movement/stock confidence wherever it recommends spending gold or concentration.

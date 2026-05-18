@@ -1,31 +1,48 @@
 # CraftingBuddy
 
-CraftingBuddy is a small WoW crafting helper built around CraftSim, Auctionator, and market movement data.
+CraftingBuddy is a local WoW gold-making helper for players who use CraftSim and Auctionator but want a simple answer:
 
-It includes:
+> Craft this item, this many times, with these reagent qualities, for this estimated profit today.
 
-- `CraftPlanExporter`, a companion addon that reads CraftSim data without modifying CraftSim.
-- A Windows helper app that installs the addon, reads SavedVariables, refreshes market data, and generates a local report.
-- Report tooling for batch crafts, concentration crafts, reagent-quality variants, and Auctionator shopping-list export.
+It is not a bot and it does not post auctions. It turns your own CraftSim scan plus current market movement into an easy report.
 
-## Normal Flow
+## What It Does
 
-1. Run `dist/CraftPlanApp.exe`, or run the app from source with `npm run app`.
-2. Select your World of Warcraft folder if it is not detected.
-3. Install the addon.
+- Installs a separate addon: `CraftPlanExporter`.
+- Reads CraftSim profit and ingredient-quality variants without modifying CraftSim.
+- Reads your realm from the addon export.
+- Pulls market data from Undermine API when you save a key, or Goblin Exchange as fallback.
+- Builds a local dark-mode report with batch crafts, concentration crafts, weekly concentration planning, and Auctionator shopping-list export.
+
+## Simple Flow
+
+1. Open `CraftPlanApp.exe`.
+2. Pick your World of Warcraft folder if needed.
+3. Click **Install addon**.
 4. In WoW, open the Auction House and run an Auctionator scan.
 5. Open CraftPlan Exporter from the minimap and press **Scan all + variants**.
-6. Type `/reload` so WoW writes SavedVariables.
-7. Generate the report.
+6. Type `/reload`.
+7. Click **Generate report**.
+8. Follow the report from the top down.
 
-## Development
+## From Source
 
 ```powershell
+npm run app
 npm run check
 node .\scripts\build-craft-plan.mjs
 npm run build:exe
 ```
 
-The app stores local config, generated reports, runtime files, and market refresh output next to the executable. Those files are ignored by git.
+The app stores local config, generated reports, runtime files, and market refresh output next to the executable/source checkout. Those files are ignored by git.
 
-See [craft-plan-README.md](craft-plan-README.md) for the longer working notes.
+## Project Docs
+
+- [User flow](docs/USER_FLOW.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Data model](docs/DATA_MODEL.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Privacy](docs/PRIVACY.md)
+- [Working notes](craft-plan-README.md)
+
+GitHub Pages lives in `docs/index.html`.

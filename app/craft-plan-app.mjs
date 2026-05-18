@@ -476,7 +476,8 @@ function renderApp() {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CraftPlan App</title>
+  <title>CraftingBuddy</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23060807'/%3E%3Cpath d='M18 38 32 12l14 26-14 14z' fill='%234ed0a4'/%3E%3Cpath d='M25 38h14l-7 9z' fill='%23e0b35a'/%3E%3C/svg%3E">
   <style>
     :root {
       color-scheme: dark;
@@ -489,6 +490,7 @@ function renderApp() {
       --green: #4ed0a4;
       --gold: #e0b35a;
       --red: #ff7f73;
+      --blue: #8db7ff;
     }
     * { box-sizing: border-box; }
     body {
@@ -506,12 +508,36 @@ function renderApp() {
     h1 { margin: 0; font-size: clamp(32px, 5vw, 58px); line-height: .95; letter-spacing: 0; }
     .sub { margin: 10px 0 0; color: var(--muted); max-width: 620px; font-size: 16px; line-height: 1.45; }
     .status-pill { border: 1px solid var(--line); border-radius: 999px; padding: 10px 14px; color: var(--muted); background: rgba(255,255,255,.04); white-space: nowrap; }
+    .next-card {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 18px;
+      padding: 18px;
+      border: 1px solid rgba(78,208,164,.36);
+      border-radius: 9px;
+      background: linear-gradient(180deg, rgba(78,208,164,.13), rgba(16,20,17,.88));
+      box-shadow: 0 18px 60px rgba(0,0,0,.32);
+    }
+    .next-card h2 { font-size: 24px; }
+    .next-card p { max-width: 760px; }
+    .next-badge {
+      border: 1px solid rgba(78,208,164,.42);
+      border-radius: 999px;
+      padding: 8px 12px;
+      color: var(--green);
+      font-weight: 900;
+      white-space: nowrap;
+    }
     .layout { display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; }
     section, aside { background: rgba(16,20,17,.88); border: 1px solid var(--line); border-radius: 8px; padding: 18px; box-shadow: 0 18px 60px rgba(0,0,0,.32); }
     .step { display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; padding: 16px 0; border-top: 1px solid var(--line); }
     .step:first-child { border-top: 0; padding-top: 0; }
     .num { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--gold); font-weight: 900; }
     .step.done .num { color: #07100d; background: var(--green); }
+    .step.active .num { color: #07100d; background: var(--gold); }
+    .step small { display: block; margin-top: 7px; color: var(--blue); font-weight: 800; }
     h2, h3 { margin: 0; letter-spacing: 0; }
     h2 { font-size: 20px; }
     h3 { font-size: 16px; }
@@ -554,8 +580,17 @@ function renderApp() {
     .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
     .key-box { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
     .key-box p { font-size: 13px; }
+    .help-box {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid rgba(224,179,90,.34);
+      border-radius: 8px;
+      background: rgba(224,179,90,.06);
+    }
+    .help-box ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+    .help-box li { margin: 4px 0; }
     @media (max-width: 860px) {
-      header, .layout, .step { grid-template-columns: 1fr; }
+      header, .layout, .step, .next-card { grid-template-columns: 1fr; }
       header { align-items: stretch; }
       .step { gap: 10px; }
       .path-row { grid-template-columns: 1fr; }
@@ -567,11 +602,19 @@ function renderApp() {
   <main>
     <header>
       <div>
-        <h1>CraftPlan</h1>
-        <p class="sub">One button path from CPE's in-game scan to a shareable craft report. Install the addon, scan in game, reload once, then generate.</p>
+        <h1>CraftingBuddy</h1>
+        <p class="sub">A local checklist that turns your CraftSim scan, Auctionator prices, and market movement into a simple craft plan.</p>
       </div>
       <div id="top-status" class="status-pill">Checking...</div>
     </header>
+
+    <div class="next-card">
+      <div>
+        <h2 id="next-title">Checking your setup...</h2>
+        <p id="next-body">CraftingBuddy is reading the local app state.</p>
+      </div>
+      <div class="next-badge" id="next-badge">Next step</div>
+    </div>
 
     <div class="layout">
       <section>
@@ -580,6 +623,7 @@ function renderApp() {
           <div>
             <h2>World of Warcraft folder</h2>
             <p>Select the folder that contains <b>_retail_</b>.</p>
+            <small id="hint-wow"></small>
             <div class="path-row">
               <input id="wow-path" spellcheck="false">
               <button id="choose-wow" class="secondary">Choose</button>
@@ -593,6 +637,7 @@ function renderApp() {
           <div>
             <h2>Install addon</h2>
             <p>Copies CraftPlan Exporter into your retail AddOns folder. CraftSim stays untouched.</p>
+            <small id="hint-addon"></small>
           </div>
           <button id="install-addon">Install</button>
         </div>
@@ -602,6 +647,7 @@ function renderApp() {
           <div>
             <h2>Scan in WoW</h2>
             <p>Open the Auction House, run an Auctionator scan, open CraftPlan Exporter from the minimap, press <b>Scan all + variants</b>, then type <b>/reload</b>.</p>
+            <small id="hint-game"></small>
           </div>
           <button id="refresh-status" class="secondary">I reloaded</button>
         </div>
@@ -611,6 +657,7 @@ function renderApp() {
           <div>
             <h2>Generate report</h2>
             <p>The app reads your exported CraftSim/CPE data, detects your realm, then uses Undermine API when a key is saved or Goblin Exchange as fallback.</p>
+            <small id="hint-report"></small>
           </div>
           <button id="generate-report" class="gold">Generate</button>
         </div>
@@ -631,6 +678,14 @@ function renderApp() {
         <div class="actions">
           <button id="open-report" class="secondary">Open report</button>
           <button id="refresh-status-2" class="secondary">Refresh</button>
+        </div>
+        <div class="help-box">
+          <h3>In-game checklist</h3>
+          <ul>
+            <li>Run an Auctionator scan at the Auction House.</li>
+            <li>Press <b>Scan all + variants</b> in CraftPlan Exporter.</li>
+            <li>Type <b>/reload</b> before generating the report.</li>
+          </ul>
         </div>
         <div id="log" class="log">Ready.</div>
       </aside>
@@ -662,10 +717,25 @@ function renderApp() {
         ? "Detected " + (state.exportInfo.meta.realmName || state.exportInfo.meta.normalizedRealmName) + " " + String(state.exportInfo.meta.region || "").toUpperCase()
         : state.addonInstalled ? "Addon installed; waiting for /reload export" : "Setup needed";
 
-      $("#step-wow").classList.toggle("done", Boolean(state.wowRoot && state.retail));
-      $("#step-addon").classList.toggle("done", Boolean(state.addonInstalled));
-      $("#step-game").classList.toggle("done", Boolean(state.exportInfo && state.exportInfo.recordsByItemID > 0));
-      $("#step-report").classList.toggle("done", Boolean(state.reportExists));
+      const hasWow = Boolean(state.wowRoot && state.retail);
+      const hasAddon = Boolean(state.addonInstalled);
+      const hasExport = Boolean(state.exportInfo && state.exportInfo.recordsByItemID > 0);
+      const hasReport = Boolean(state.reportExists);
+      const next = getNextAction({ hasWow, hasAddon, hasExport, hasReport });
+
+      $("#next-title").textContent = next.title;
+      $("#next-body").textContent = next.body;
+      $("#next-badge").textContent = next.badge;
+
+      setStepState("#step-wow", hasWow, next.step === "wow");
+      setStepState("#step-addon", hasAddon, next.step === "addon");
+      setStepState("#step-game", hasExport, next.step === "game");
+      setStepState("#step-report", hasReport, next.step === "report");
+
+      $("#hint-wow").textContent = hasWow ? "Ready: " + state.wowRoot : "Choose the folder named World of Warcraft, not _retail_ itself.";
+      $("#hint-addon").textContent = hasAddon ? "Ready: addon is installed." : hasWow ? "Next: install CraftPlan Exporter." : "Pick the WoW folder first.";
+      $("#hint-game").textContent = hasExport ? "Ready: " + infoLabel(state.exportInfo) : hasAddon ? "Next: scan in WoW, then /reload." : "Install the addon first.";
+      $("#hint-report").textContent = hasReport ? "Ready: report exists. Generate again after every new scan." : hasExport ? "Next: generate the report." : "Scan in WoW first.";
 
       const info = state.exportInfo || {};
       const meta = info.meta || {};
@@ -684,6 +754,60 @@ function renderApp() {
       if (state.lastJob?.running) setLog(state.lastJob.message || "Working...");
       else if (state.lastJob?.ok) setLog("Report generated for " + state.lastJob.realm.label + " via " + (state.lastJob.marketSource || "market data") + ". Matched " + state.lastJob.matchedProfitRecords + "/" + state.lastJob.snapshotItems + " profit rows.");
       else if (state.lastJob?.error) setLog(state.lastJob.error, "bad");
+    }
+
+    function getNextAction(status) {
+      if (!status.hasWow) {
+        return {
+          step: "wow",
+          badge: "Step 1",
+          title: "Choose your World of Warcraft folder",
+          body: "CraftingBuddy needs the folder that contains _retail_ so it can install the addon and read your scan after /reload.",
+        };
+      }
+      if (!status.hasAddon) {
+        return {
+          step: "addon",
+          badge: "Step 2",
+          title: "Install CraftPlan Exporter",
+          body: "This copies the small companion addon into WoW. CraftSim and Auctionator are left alone.",
+        };
+      }
+      if (!status.hasExport) {
+        return {
+          step: "game",
+          badge: "Step 3",
+          title: "Scan in WoW, then /reload",
+          body: "At the Auction House run Auctionator scan, open CraftPlan Exporter from the minimap, press Scan all + variants, then type /reload.",
+        };
+      }
+      if (!status.hasReport) {
+        return {
+          step: "report",
+          badge: "Step 4",
+          title: "Generate your craft report",
+          body: "CraftingBuddy has your scan. Generate the report to see what to craft, how many, and which reagent qualities to buy.",
+        };
+      }
+      return {
+        step: "done",
+        badge: "Ready",
+        title: "Report ready",
+        body: "Open the report, add mats from the best crafts, paste the shopping list into CPE, and craft from the top down. Regenerate after every new WoW scan.",
+      };
+    }
+
+    function setStepState(selector, done, active) {
+      const element = $(selector);
+      element.classList.toggle("done", Boolean(done));
+      element.classList.toggle("active", Boolean(active && !done));
+    }
+
+    function infoLabel(info) {
+      const meta = info?.meta || {};
+      const realm = meta.realmName || meta.normalizedRealmName || "realm found";
+      const records = info?.recordsByItemID == null ? "0" : String(info.recordsByItemID);
+      return realm + ", " + records + " profit items saved.";
     }
 
     function metric(label, value) {

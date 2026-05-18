@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CraftingBuddy</title>
+  <meta name="description" content="A local WoW crafting helper that turns CraftSim, Auctionator, and market movement into a simple craft plan.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070907'/%3E%3Cpath d='M18 38 32 12l14 26-14 14z' fill='%2351d6a8'/%3E%3Cpath d='M25 38h14l-7 9z' fill='%23e4b65e'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070907;
+      --panel: #111711;
+      --panel-2: #182019;
+      --ink: #f5f0df;
+      --muted: #b4b8aa;
+      --line: rgba(255,255,255,.14);
+      --green: #51d6a8;
+      --gold: #e4b65e;
+      --red: #ef7f6f;
+      font-family: Bahnschrift, Aptos, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 0%, rgba(81,214,168,.22), transparent 32rem),
+        radial-gradient(circle at 86% 12%, rgba(228,182,94,.16), transparent 30rem),
+        linear-gradient(135deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 30px 30px,
+        var(--bg);
+    }
+    main { width: min(1120px, calc(100vw - 28px)); margin: 0 auto; }
+    header {
+      min-height: 88vh;
+      display: grid;
+      align-content: center;
+      gap: 28px;
+      padding: 54px 0 40px;
+    }
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 0;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    nav a, .link { color: var(--ink); text-decoration: none; }
+    nav a:hover, .link:hover { color: var(--green); }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+      gap: 24px;
+      align-items: center;
+    }
+    h1 {
+      margin: 0;
+      max-width: 640px;
+      font-size: clamp(42px, 6vw, 82px);
+      line-height: .9;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    .lede {
+      margin: 22px 0 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: clamp(18px, 2vw, 24px);
+      line-height: 1.35;
+    }
+    .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      border-radius: 999px;
+      padding: 0 18px;
+      color: #06100c;
+      background: var(--green);
+      font-weight: 900;
+      text-decoration: none;
+      box-shadow: 0 18px 46px rgba(0,0,0,.28);
+    }
+    .button.secondary {
+      color: var(--ink);
+      background: rgba(255,255,255,.055);
+      border: 1px solid var(--line);
+    }
+    .terminal {
+      border: 1px solid rgba(81,214,168,.34);
+      background: linear-gradient(180deg, rgba(17,23,17,.96), rgba(7,9,7,.96));
+      border-radius: 10px;
+      box-shadow: 0 28px 80px rgba(0,0,0,.38);
+      overflow: hidden;
+    }
+    .terminal-head {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); opacity: .8; }
+    .terminal-body { padding: 16px; display: grid; gap: 12px; }
+    .call {
+      border: 1px solid rgba(255,255,255,.09);
+      background: rgba(255,255,255,.035);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .call b { color: var(--green); }
+    .call span { display: block; color: var(--muted); margin-top: 4px; }
+    section { padding: 46px 0; }
+    h2 { margin: 0 0 16px; font-size: clamp(28px, 4vw, 44px); letter-spacing: 0; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(17,23,17,.78);
+      padding: 18px;
+    }
+    .card h3 { margin: 0; font-size: 19px; }
+    .card p, li { color: var(--muted); line-height: 1.45; }
+    ol, ul { padding-left: 20px; }
+    .steps { counter-reset: step; display: grid; gap: 10px; }
+    .step {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(17,23,17,.72);
+      padding: 14px;
+    }
+    .step:before {
+      content: counter(step);
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--green);
+      color: #06100c;
+      font-weight: 900;
+    }
+    footer { padding: 46px 0 70px; color: var(--muted); border-top: 1px solid var(--line); }
+    @media (max-width: 860px) {
+      header { min-height: auto; }
+      .hero, .grid { grid-template-columns: 1fr; }
+      nav { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="https://github.com/KacperNowicki/CraftingBuddy">CraftingBuddy</a>
+      <div>
+        <a href="#flow">Flow</a>
+        &nbsp;&nbsp;
+        <a href="#docs">Docs</a>
+      </div>
+    </nav>
+
+    <header>
+      <div class="hero">
+        <div>
+          <h1>Craft gold without spreadsheet brain.</h1>
+          <p class="lede">CraftingBuddy turns CraftSim, Auctionator, and market movement into a plain local report: what to craft, how many, what reagent qualities to buy, and whether the market looks safe enough.</p>
+          <div class="cta-row">
+            <a class="button" href="https://github.com/KacperNowicki/CraftingBuddy">View on GitHub</a>
+            <a class="button secondary" href="USER_FLOW.md">Read the flow</a>
+          </div>
+        </div>
+        <div class="terminal" aria-label="Example craft plan">
+          <div class="terminal-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>today's plan</span></div>
+          <div class="terminal-body">
+            <div class="call"><b>Craft 2 Lightfused Mana Potion Q2</b><span>4,208g weekly profit · strong market · exact Q1 mats</span></div>
+            <div class="call"><b>Add mats to Auctionator</b><span>preserves reagent qualities so the list matches the optimizer path</span></div>
+            <div class="call"><b>Skip rarely bought items</b><span>thin markets stay visible, but not in weekly concentration spend by default</span></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section id="flow">
+      <h2>The flow</h2>
+      <div class="steps">
+        <div class="step"><div><b>Open CraftingBuddy.</b><br><span>Pick your WoW folder and install the addon.</span></div></div>
+        <div class="step"><div><b>Scan in WoW.</b><br><span>Run Auctionator scan, open CPE from the minimap, press Scan all + variants, then /reload.</span></div></div>
+        <div class="step"><div><b>Generate report.</b><br><span>The app detects your realm and uses Undermine API or Goblin Exchange market data.</span></div></div>
+        <div class="step"><div><b>Craft from the top down.</b><br><span>Use market confidence and shopping-list buttons to stay out of low-movement traps.</span></div></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Why it exists</h2>
+      <div class="grid">
+        <div class="card"><h3>Personal profit</h3><p>CraftSim already knows your character stats, reagent quality breakpoints, multicraft, and concentration costs. CraftingBuddy keeps using that instead of guessing.</p></div>
+        <div class="card"><h3>Market sanity</h3><p>A huge margin is useless if nobody buys the item. The report surfaces daily movement, stock, and confidence labels.</p></div>
+        <div class="card"><h3>Exact mats</h3><p>Mixed-quality reagent paths are preserved all the way into the Auctionator shopping-list payload.</p></div>
+      </div>
+    </section>
+
+    <section id="docs">
+      <h2>Project docs</h2>
+      <div class="grid">
+        <a class="card link" href="ARCHITECTURE.md"><h3>Architecture</h3><p>Addon, app, report, storage, and market source boundaries.</p></a>
+        <a class="card link" href="DATA_MODEL.md"><h3>Data model</h3><p>SavedVariables, market snapshots, report JSON, and shopping payloads.</p></a>
+        <a class="card link" href="ROADMAP.md"><h3>Roadmap</h3><p>What is next, what is later, and what is intentionally out of scope.</p></a>
+      </div>
+    </section>
+
+    <footer>
+      Unofficial World of Warcraft helper. CraftingBuddy is local-first and does not replace CraftSim, Auctionator, or good market judgment.
+    </footer>
+  </main>
+</body>
+</html>

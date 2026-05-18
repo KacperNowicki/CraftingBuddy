@@ -1,6 +1,12 @@
 {
   "name": "craftingbuddy",
   "version": "0.2.0",
+  "license": "MIT",
+  "homepage": "https://kacpernowicki.github.io/CraftingBuddy/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KacperNowicki/CraftingBuddy.git"
+  },
   "type": "module",
   "bin": "app/craft-plan-app.mjs",
   "scripts": {
