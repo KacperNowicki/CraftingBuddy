@@ -341,6 +341,70 @@ local function ExtractProfessionGear(recipeData)
     }
 end
 
+local function GetProfessionStatSnapshot(stat)
+    if not stat then return nil end
+
+    local percent = 0
+    if stat.GetPercent then
+        local ok, value = pcall(stat.GetPercent, stat, true)
+        if ok then percent = SafeNumber(value, 0) end
+    end
+
+    local extraValue = 0
+    if stat.GetExtraValue then
+        local ok, value = pcall(stat.GetExtraValue, stat)
+        if ok then extraValue = SafeNumber(value, 0) end
+    end
+
+    local extraValue2 = 0
+    if stat.GetExtraValue then
+        local ok, value = pcall(stat.GetExtraValue, stat, 2)
+        if ok then extraValue2 = SafeNumber(value, 0) end
+    end
+
+    return {
+        value = SafeNumber(stat.value, 0),
+        percent = percent,
+        extraValue = extraValue,
+        extraValue2 = extraValue2,
+    }
+end
+
+local function ExtractCraftingStats(recipeData)
+    local stats = recipeData and recipeData.professionStats
+    if not stats then return nil end
+
+    return {
+        skill = stats.skill and SafeNumber(stats.skill.value, 0) or 0,
+        recipeDifficulty = stats.recipeDifficulty and SafeNumber(stats.recipeDifficulty.value, 0) or 0,
+        multicraft = GetProfessionStatSnapshot(stats.multicraft),
+        resourcefulness = GetProfessionStatSnapshot(stats.resourcefulness),
+        ingenuity = GetProfessionStatSnapshot(stats.ingenuity),
+    }
+end
+
+local function GetEffectiveConcentrationCost(recipeData)
+    local rawCost = SafeNumber(recipeData and recipeData.concentrationCost, 0)
+    if rawCost <= 0 then return 0, 0, 0 end
+
+    local ingenuity = recipeData.professionStats and recipeData.professionStats.ingenuity
+    local ingenuityChance = 0
+    local ingenuityBonus = 0
+    if ingenuity and ingenuity.GetPercent then
+        local ok, value = pcall(ingenuity.GetPercent, ingenuity, true)
+        if ok then ingenuityChance = SafeNumber(value, 0) end
+    end
+    if ingenuity and ingenuity.GetExtraValue then
+        local ok, value = pcall(ingenuity.GetExtraValue, ingenuity)
+        if ok then ingenuityBonus = SafeNumber(value, 0) end
+    end
+
+    local refundRate = 0.5 + ingenuityBonus
+    local expectedRefund = rawCost * ingenuityChance * refundRate
+    local effectiveCost = math.max(0, rawCost - expectedRefund)
+    return effectiveCost, expectedRefund, refundRate
+end
+
 local function GetResultItem(recipeData)
     if not recipeData or not recipeData.resultData then return nil end
     local resultData = recipeData.resultData
@@ -626,6 +690,7 @@ local function BuildVariantRecord(recipeData)
     local resultItemPrice = expectedQuality and priceData.qualityPriceList and priceData.qualityPriceList[expectedQuality] or 0
     local resultItemPriceConcentration = expectedQualityConcentration and priceData.qualityPriceList and
         priceData.qualityPriceList[expectedQualityConcentration] or resultItemPrice
+    local effectiveConcentrationCost, expectedIngenuityRefund, ingenuityRefundRate = GetEffectiveConcentrationCost(recipeData)
 
     return {
         expectedQuality = expectedQuality,
@@ -646,6 +711,10 @@ local function BuildVariantRecord(recipeData)
         resultItemPriceConcentration = resultItemPriceConcentration or 0,
         concentration = not not recipeData.concentrating,
         concentrationCost = recipeData.concentrationCost or 0,
+        effectiveConcentrationCost = effectiveConcentrationCost,
+        expectedIngenuityRefund = expectedIngenuityRefund,
+        ingenuityRefundRate = ingenuityRefundRate,
+        craftingStats = ExtractCraftingStats(recipeData),
         allocation = ExtractVariantAllocation(recipeData),
     }
 end
@@ -769,6 +838,7 @@ function Exporter:BuildRecord(recipeData, source)
     local resultItemPrice = expectedQuality and priceData.qualityPriceList and priceData.qualityPriceList[expectedQuality] or 0
     local resultItemPriceConcentration = expectedQualityConcentration and priceData.qualityPriceList and
         priceData.qualityPriceList[expectedQualityConcentration] or resultItemPrice
+    local effectiveConcentrationCost, expectedIngenuityRefund, ingenuityRefundRate = GetEffectiveConcentrationCost(recipeData)
     local concentrationValue, concentrationProfit = 0, 0
     if recipeData.GetConcentrationValue then
         local ok, value, profit = pcall(recipeData.GetConcentrationValue, recipeData)
@@ -813,11 +883,16 @@ function Exporter:BuildRecord(recipeData, source)
         resultItemPriceConcentration = resultItemPriceConcentration or 0,
         concentration = not not recipeData.concentrating,
         concentrationCost = recipeData.concentrationCost or 0,
+        effectiveConcentrationCost = effectiveConcentrationCost,
+        expectedIngenuityRefund = expectedIngenuityRefund,
+        ingenuityRefundRate = ingenuityRefundRate,
         concentrationValue = concentrationValue,
         concentrationProfit = concentrationProfit,
+        craftingStats = ExtractCraftingStats(recipeData),
         supportsQualities = not not recipeData.supportsQualities,
         supportsMulticraft = not not recipeData.supportsMulticraft,
         supportsResourcefulness = not not recipeData.supportsResourcefulness,
+        supportsIngenuity = not not recipeData.supportsIngenuity,
         supportsCraftingStats = not not recipeData.supportsCraftingStats,
         isGear = not not recipeData.isGear,
         isSoulbound = not not recipeData.isSoulbound,
@@ -1813,7 +1888,7 @@ function Exporter:CreatePanel()
     end
 
     CreatePanelText(panel, "CraftSim Recipe Scan", "TOPLEFT", panel, "TOPLEFT", 18, -36)
-    CreatePanelButton(panel, "Scan professions + variants", 18, -62, 220, function()
+    CreatePanelButton(panel, "Scan all + variants", 18, -62, 220, function()
         Exporter:RunAllRecipeScanWithVariants()
     end)
     CreatePanelButton(panel, "Stats", 250, -62, 88, function()

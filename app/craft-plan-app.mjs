@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { access, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -22,6 +22,8 @@ const REPORT_HTML = path.join(OUTPUT_DIR, "craft-plan-report.html");
 const REPORT_JSON = path.join(OUTPUT_DIR, "craft-plan-report.json");
 const UPDATE_REPO = "KacperNowicki/CraftingBuddy";
 const UPDATE_ASSET_NAME = "CraftPlanApp.exe";
+const API_TOKEN_HEADER = "x-craftingbuddy-token";
+const API_TOKEN = randomBytes(32).toString("base64url");
 const APP_ICON_HREF = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20256%20256%22%3E%0A%20%20%3Crect%20x%3D%2210%22%20y%3D%2210%22%20width%3D%22236%22%20height%3D%22236%22%20rx%3D%2246%22%20fill%3D%22%2307100c%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M10%2056a46%2046%200%200%201%2046-46h144a46%2046%200%200%201%2046%2046v144a46%2046%200%200%201-46%2046H56a46%2046%200%200%201-46-46z%22%20fill%3D%22url%28%23bg%29%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22128%22%20cy%3D%22131%22%20r%3D%2276%22%20fill%3D%22none%22%20stroke%3D%22%23e4b65e%22%20stroke-width%3D%2211%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M128%2042%20190%20108%20128%20206%2066%20108Z%22%20fill%3D%22%2351d6a8%22%20stroke%3D%22%23f7efd6%22%20stroke-width%3D%224%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M128%2042%20190%20108%20128%20118Z%22%20fill%3D%22%23fff%22%20opacity%3D%22.42%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M66%20108%20128%20206%20128%20118Z%22%20fill%3D%22%23e4b65e%22%20opacity%3D%22.74%22%2F%3E%0A%20%20%3Cpath%20d%3D%22m193%2042%2011%2028%2028%2011-28%2011-11%2028-11-28-28-11%2028-11z%22%20fill%3D%22%23f7efd6%22%2F%3E%0A%20%20%3Cdefs%3E%3ClinearGradient%20id%3D%22bg%22%20x1%3D%2228%22%20x2%3D%22226%22%20y1%3D%2224%22%20y2%3D%22232%22%3E%3Cstop%20stop-color%3D%22%2307100c%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23182219%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%0A%3C%2Fsvg%3E";
 
 let config = await loadConfig();
@@ -33,6 +35,10 @@ const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
     if (request.method === "OPTIONS") return sendEmpty(response);
+    if (isApiPath(url.pathname)) {
+      const validation = validateApiRequest(request);
+      if (!validation.ok) return sendJson(response, { ok: false, error: validation.error }, validation.status);
+    }
     if (request.method === "GET" && url.pathname === "/") return sendHtml(response, renderApp());
     if (request.method === "GET" && url.pathname === "/report") return sendFile(response, REPORT_HTML, "text/html; charset=utf-8");
     if (request.method === "GET" && url.pathname === "/api/status") return sendJson(response, await getStatus());
@@ -444,9 +450,7 @@ async function fetchLatestRelease() {
 
 function findUpdateAsset(release) {
   const assets = Array.isArray(release?.assets) ? release.assets : [];
-  return assets.find((asset) => asset.name === UPDATE_ASSET_NAME) ||
-    assets.find((asset) => String(asset.name || "").toLowerCase().endsWith(".exe")) ||
-    null;
+  return assets.find((asset) => asset.name === UPDATE_ASSET_NAME) || null;
 }
 
 async function getStagedUpdateInfo() {
@@ -669,11 +673,54 @@ function psQuote(value) {
   return "'" + String(value).replace(/'/g, "''") + "'";
 }
 
+function isApiPath(pathname) {
+  return pathname === "/regenerate" || pathname.startsWith("/api/");
+}
+
+function validateApiRequest(request) {
+  if (!isLoopbackHost(request.headers.host)) {
+    return { ok: false, status: 403, error: "Rejected non-local app request." };
+  }
+
+  const origin = String(request.headers.origin || "").trim();
+  if (origin && !isLoopbackOrigin(origin)) {
+    return { ok: false, status: 403, error: "Rejected cross-site app request." };
+  }
+
+  const token = String(request.headers[API_TOKEN_HEADER] || "");
+  if (token !== API_TOKEN) {
+    return { ok: false, status: 403, error: "App request token is missing or expired. Refresh CraftingBuddy and try again." };
+  }
+
+  return { ok: true };
+}
+
+function isLoopbackOrigin(origin) {
+  if (origin === "null") return true;
+  try {
+    const parsed = new URL(origin);
+    return ["http:", "https:"].includes(parsed.protocol) && isLoopbackHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHost(host) {
+  try {
+    const parsed = new URL(`http://${String(host || "")}`);
+    return isLoopbackHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHostname(hostname) {
+  const normalized = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
+}
+
 function responseHeaders(extra = {}) {
   return {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type",
     "cache-control": "no-store",
     ...extra,
   };
@@ -697,6 +744,12 @@ function sendHtml(response, html) {
 async function sendFile(response, filePath, contentType) {
   if (!(await exists(filePath))) return sendJson(response, { ok: false, error: "Report has not been generated yet." }, 404);
   response.writeHead(200, responseHeaders({ "content-type": contentType }));
+  if (path.resolve(filePath) === path.resolve(REPORT_HTML)) {
+    const html = await readFile(filePath, "utf8");
+    const tokenScript = `<script>window.CRAFTINGBUDDY_API_TOKEN=${JSON.stringify(API_TOKEN)};</script>`;
+    response.end(html.replace("</head>", `${tokenScript}</head>`));
+    return;
+  }
   response.end(await readFile(filePath));
 }
 
@@ -948,13 +1001,17 @@ function renderApp() {
   </main>
   <script>
     const $ = (selector) => document.querySelector(selector);
+    const API_TOKEN = ${JSON.stringify(API_TOKEN)};
     let state = null;
     let updateInfo = null;
 
     async function api(path, body) {
       const response = await fetch(path, {
         method: body ? "POST" : "GET",
-        headers: body ? { "content-type": "application/json" } : {},
+        headers: {
+          "x-craftingbuddy-token": API_TOKEN,
+          ...(body ? { "content-type": "application/json" } : {}),
+        },
         body: body ? JSON.stringify(body) : undefined,
       });
       const payload = await response.json();

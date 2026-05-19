@@ -28,6 +28,7 @@ Important concepts:
 - `recordsByRecipeID` preserves recipe-level data when item IDs are ambiguous.
 - `variantOptimization` stores tested ingredient quality paths.
 - `concentration` stores current/max concentration when Blizzard APIs expose it.
+- concentration records and variants can include `effectiveConcentrationCost`, `expectedIngenuityRefund`, `ingenuityRefundRate`, and `craftingStats`; the report uses these to spend expected concentration after Ingenuity refunds while keeping raw cost inspectable.
 
 ## Market Snapshot
 
@@ -65,6 +66,13 @@ Top-level groups:
 - `concentrationVariants` - flattened variant options for budget planning.
 - `weeklyConcentrationPlan` - optimized weekly spend under the chosen concentration budget.
 - `missingProfit` - market items without matching CraftSim/CPE data.
+
+Concentration planning fields:
+
+- `concentrationCost` - raw CraftSim concentration cost shown as detail.
+- `effectiveConcentrationCost` - expected cost after Ingenuity refund chance and refund size.
+- `profitPerConcentrationCopper` - profit divided by `effectiveConcentrationCost`.
+- `weeklyConcentrationPlan.usedConcentration` - expected concentration spent, not raw pre-refund cost.
 
 ## Shopping Payload
 

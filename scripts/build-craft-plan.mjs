@@ -297,6 +297,9 @@ function buildReport(snapshot, profitDB, config) {
       candidateCount: candidates.length,
       concentrationCandidateCount: concentrationCandidates.length,
       concentrationVariantCount: concentrationVariants.length,
+      ingenuityAdjustedVariantCount: concentrationVariants.filter((variant) =>
+        Math.abs(Number(variant.concentrationCost ?? 0) - Number(variant.effectiveConcentrationCost ?? variant.concentrationCost ?? 0)) >= 0.5
+      ).length,
       weeklyConcentrationBudget: config.concentrationBudget,
       weeklyConcentrationUsed: weeklyConcentrationPlan.usedConcentration,
       weeklyConcentrationProfitCopper: weeklyConcentrationPlan.totalProfitCopper,
@@ -360,11 +363,12 @@ function scoreItem(item, profit, config) {
   const displayName = qualityLabel ? `${item.name} ${qualityLabel}` : item.name;
   const concentrationDisplayName = concentrationQualityLabel ? `${item.name} ${concentrationQualityLabel}` : displayName;
   const concentrationCost = Math.max(0, Number(profit?.concentrationCost ?? 0));
+  const effectiveConcentrationCost = getEffectiveConcentrationCost(profit, concentrationCost);
   const usesConcentration = Boolean(profit?.concentration) || concentrationCost > 0;
   const profitPerConcentrationCopper =
-    usesConcentration && concentrationCost > 0 ? averageProfitCopper / concentrationCost : 0;
+    usesConcentration && effectiveConcentrationCost > 0 ? averageProfitCopper / effectiveConcentrationCost : 0;
   const concentrationProfitPerConcentrationCopper =
-    usesConcentration && concentrationCost > 0 ? concentrationAverageProfitCopper / concentrationCost : 0;
+    usesConcentration && effectiveConcentrationCost > 0 ? concentrationAverageProfitCopper / effectiveConcentrationCost : 0;
 
   const stockPressure =
     avgQty7 > 0 && currentQuantity > avgQty7 * 1.4 ? 0.55 :
@@ -427,6 +431,13 @@ function scoreItem(item, profit, config) {
     usesConcentration,
     concentrationCost,
     concentrationCostFormatted: formatNumber(concentrationCost),
+    effectiveConcentrationCost,
+    effectiveConcentrationCostFormatted: formatNumber(effectiveConcentrationCost),
+    concentrationCostLabel: formatConcentrationCost(concentrationCost, effectiveConcentrationCost),
+    concentrationIngenuityNote: formatIngenuityNote(concentrationCost, effectiveConcentrationCost, profit),
+    expectedIngenuityRefund: Math.max(0, concentrationCost - effectiveConcentrationCost),
+    expectedIngenuityRefundFormatted: formatNumber(Math.max(0, concentrationCost - effectiveConcentrationCost)),
+    craftingStats: profit?.craftingStats ?? null,
     profitPerConcentrationCopper,
     profitPerConcentration: formatCopper(profitPerConcentrationCopper),
     concentrationProfitPerConcentrationCopper,
@@ -503,6 +514,49 @@ function isWeeklyPlannerEligible(option) {
   return dailyDrop >= 500 && currentQuantity >= 250;
 }
 
+function getEffectiveConcentrationCost(source, rawCost) {
+  rawCost = Math.max(0, Number(rawCost ?? source?.concentrationCost ?? 0));
+  const exportedCost = Number(source?.effectiveConcentrationCost);
+  if (Number.isFinite(exportedCost) && exportedCost > 0) {
+    return Math.min(rawCost || exportedCost, Math.max(0, exportedCost));
+  }
+
+  const value = Number(source?.concentrationValue ?? 0);
+  const profit = Number(source?.concentrationProfit ?? 0);
+  if (value > 0 && profit > 0) {
+    return Math.min(rawCost || profit / value, Math.max(0, profit / value));
+  }
+
+  return rawCost;
+}
+
+function formatConcentrationCost(rawCost, effectiveCost) {
+  rawCost = Math.max(0, Number(rawCost ?? 0));
+  effectiveCost = Math.max(0, Number(effectiveCost ?? rawCost));
+  const rawFormatted = formatNumber(rawCost);
+  const effectiveFormatted = formatNumber(effectiveCost);
+  if (!rawCost || Math.abs(rawCost - effectiveCost) < 0.5) return rawFormatted;
+  return `${effectiveFormatted} expected (${rawFormatted} raw)`;
+}
+
+function formatIngenuityNote(rawCost, effectiveCost, source) {
+  rawCost = Math.max(0, Number(rawCost ?? 0));
+  effectiveCost = Math.max(0, Number(effectiveCost ?? rawCost));
+  if (!rawCost || Math.abs(rawCost - effectiveCost) < 0.5) return "";
+  const saved = Math.max(0, rawCost - effectiveCost);
+  const chance = Number(source?.craftingStats?.ingenuity?.percent ?? source?.ingenuityChance ?? 0);
+  const chanceText = chance > 0 ? `, ${formatPercent(chance)} Ingenuity` : "";
+  return `${formatNumber(effectiveCost)} expected concentration after Ingenuity (${formatNumber(saved)} average refund${chanceText}).`;
+}
+
+function formatPercent(value) {
+  value = Number(value ?? 0);
+  if (!Number.isFinite(value)) return "0%";
+  const percent = value * 100;
+  if (Math.abs(percent - Math.round(percent)) < 0.05) return `${Math.round(percent)}%`;
+  return `${percent.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
+}
+
 function normalizeIngredientOptimization(optimization, context = {}) {
   const variants = asArray(optimization?.variants);
   if (!variants.length) return null;
@@ -535,8 +589,9 @@ function normalizeIngredientOptimization(optimization, context = {}) {
       ? getAuctionHouseSaleValue(concentrationResultItemPriceCopper, expectedYieldPerCraft) - craftingCostsCopper
       : averageProfitCopper;
     const concentrationCost = Math.max(0, Number(variant.concentrationCost ?? 0));
-    const profitPerConcentrationCopper = concentrationCost > 0 ? averageProfitCopper / concentrationCost : 0;
-    const concentrationProfitPerConcentrationCopper = concentrationCost > 0 ? concentrationAverageProfitCopper / concentrationCost : 0;
+    const effectiveConcentrationCost = getEffectiveConcentrationCost(variant, concentrationCost);
+    const profitPerConcentrationCopper = effectiveConcentrationCost > 0 ? averageProfitCopper / effectiveConcentrationCost : 0;
+    const concentrationProfitPerConcentrationCopper = effectiveConcentrationCost > 0 ? concentrationAverageProfitCopper / effectiveConcentrationCost : 0;
     const planningAverageProfitCopper = context.usesConcentration
       ? concentrationAverageProfitCopper
       : averageProfitCopper;
@@ -573,12 +628,19 @@ function normalizeIngredientOptimization(optimization, context = {}) {
       concentration: Boolean(variant.concentration) || concentrationCost > 0,
       concentrationCost,
       concentrationCostFormatted: formatNumber(concentrationCost),
+      effectiveConcentrationCost,
+      effectiveConcentrationCostFormatted: formatNumber(effectiveConcentrationCost),
+      concentrationCostLabel: formatConcentrationCost(concentrationCost, effectiveConcentrationCost),
+      concentrationIngenuityNote: formatIngenuityNote(concentrationCost, effectiveConcentrationCost, variant),
+      expectedIngenuityRefund: Math.max(0, concentrationCost - effectiveConcentrationCost),
+      expectedIngenuityRefundFormatted: formatNumber(Math.max(0, concentrationCost - effectiveConcentrationCost)),
+      craftingStats: variant.craftingStats ?? null,
       profitPerConcentrationCopper,
-      profitPerConcentration: concentrationCost > 0 ? formatCopper(profitPerConcentrationCopper) : "n/a",
+      profitPerConcentration: effectiveConcentrationCost > 0 ? formatCopper(profitPerConcentrationCopper) : "n/a",
       concentrationProfitPerConcentrationCopper,
-      concentrationProfitPerConcentration: concentrationCost > 0 ? formatCopper(concentrationProfitPerConcentrationCopper) : "n/a",
+      concentrationProfitPerConcentration: effectiveConcentrationCost > 0 ? formatCopper(concentrationProfitPerConcentrationCopper) : "n/a",
       planningProfitPerConcentrationCopper,
-      planningProfitPerConcentration: concentrationCost > 0 ? formatCopper(planningProfitPerConcentrationCopper) : "n/a",
+      planningProfitPerConcentration: effectiveConcentrationCost > 0 ? formatCopper(planningProfitPerConcentrationCopper) : "n/a",
       allocationText: allocationSummary.text,
       qualityProfile: allocationSummary.label,
       qualityProfileShort: allocationSummary.shortLabel,
@@ -633,7 +695,7 @@ function hasConcentrationData(row) {
 
 function getVariantBudgetStatsData(variant, budget) {
   budget = Math.max(0, Math.floor(Number(budget ?? 0)));
-  const concentrationCost = Math.max(0, Math.round(Number(variant?.concentrationCost ?? 0)));
+  const concentrationCost = Math.max(0, Math.round(Number(variant?.effectiveConcentrationCost ?? variant?.concentrationCost ?? 0)));
   const averageProfitCopper = Number(variant?.planningAverageProfitCopper ?? variant?.concentrationAverageProfitCopper ?? variant?.averageProfitCopper ?? 0);
   const crafts = concentrationCost > 0 ? Math.floor(budget / concentrationCost) : 0;
   const usedConcentration = crafts * concentrationCost;
@@ -670,7 +732,7 @@ function addConcentrationSummary(row, budget) {
   const bestProfitVariant = pickBestVariant(rankingVariants, (a, b) =>
     Number(a.planningAverageProfitCopper ?? a.concentrationAverageProfitCopper ?? a.averageProfitCopper ?? 0) -
       Number(b.planningAverageProfitCopper ?? b.concentrationAverageProfitCopper ?? b.averageProfitCopper ?? 0) ||
-    Number(b.concentrationCost ?? 0) - Number(a.concentrationCost ?? 0)
+    Number(b.effectiveConcentrationCost ?? b.concentrationCost ?? 0) - Number(a.effectiveConcentrationCost ?? a.concentrationCost ?? 0)
   );
   const bestPerPointVariant = pickBestVariant(rankingVariants, (a, b) =>
     Number(a.planningProfitPerConcentrationCopper ?? a.concentrationProfitPerConcentrationCopper ?? a.profitPerConcentrationCopper ?? 0) -
@@ -681,9 +743,10 @@ function addConcentrationSummary(row, budget) {
   const bestVariant = bestBudgetVariant || bestPerPointVariant || bestProfitVariant;
   const bestBudgetStats = getVariantBudgetStatsData(bestVariant, budget);
   const bestProfitCopper = Number(bestVariant?.planningAverageProfitCopper ?? bestVariant?.concentrationAverageProfitCopper ?? row.concentrationAverageProfitCopper ?? row.averageProfitCopper ?? 0);
-  const bestConcentrationCost = Math.max(0, Math.round(Number(bestVariant?.concentrationCost ?? row.concentrationCost ?? 0)));
+  const bestRawConcentrationCost = Math.max(0, Math.round(Number(bestVariant?.concentrationCost ?? row.concentrationCost ?? 0)));
+  const bestEffectiveConcentrationCost = Math.max(0, Number(bestVariant?.effectiveConcentrationCost ?? row.effectiveConcentrationCost ?? bestRawConcentrationCost));
   const bestCraftingCostCopper = Number(bestVariant?.craftingCostsCopper ?? row.craftingCostsCopper ?? 0);
-  const bestPerPointCopper = bestConcentrationCost > 0 ? bestProfitCopper / bestConcentrationCost : 0;
+  const bestPerPointCopper = bestEffectiveConcentrationCost > 0 ? bestProfitCopper / bestEffectiveConcentrationCost : 0;
 
   return {
     ...row,
@@ -697,10 +760,14 @@ function addConcentrationSummary(row, budget) {
     concentrationBestProfit: formatCopper(bestProfitCopper),
     concentrationBestCraftingCostCopper: bestCraftingCostCopper,
     concentrationBestCraftingCost: formatCopper(bestCraftingCostCopper),
-    concentrationBestCost: bestConcentrationCost,
-    concentrationBestCostFormatted: formatNumber(bestConcentrationCost),
+    concentrationBestCost: bestEffectiveConcentrationCost,
+    concentrationBestCostFormatted: formatNumber(bestEffectiveConcentrationCost),
+    concentrationBestRawCost: bestRawConcentrationCost,
+    concentrationBestRawCostFormatted: formatNumber(bestRawConcentrationCost),
+    concentrationBestCostLabel: formatConcentrationCost(bestRawConcentrationCost, bestEffectiveConcentrationCost),
+    concentrationBestIngenuityNote: bestVariant?.concentrationIngenuityNote ?? row.concentrationIngenuityNote ?? "",
     concentrationBestPerPointCopper: bestPerPointCopper,
-    concentrationBestPerPoint: bestConcentrationCost > 0 ? formatCopper(bestPerPointCopper) : "n/a",
+    concentrationBestPerPoint: bestEffectiveConcentrationCost > 0 ? formatCopper(bestPerPointCopper) : "n/a",
     concentrationBestBudgetProfitCopper: bestBudgetStats.totalProfitCopper,
     concentrationBestBudgetProfit: formatCopper(bestBudgetStats.totalProfitCopper),
     concentrationBestBudgetCrafts: bestBudgetStats.crafts,
@@ -740,6 +807,10 @@ function buildConcentrationVariantRows(rows) {
           planningResultItemPrice: row.concentrationResultPrice ?? row.resultPrice,
           concentrationCost: row.concentrationCost,
           concentrationCostFormatted: row.concentrationCostFormatted,
+          effectiveConcentrationCost: row.effectiveConcentrationCost,
+          effectiveConcentrationCostFormatted: row.effectiveConcentrationCostFormatted,
+          concentrationCostLabel: row.concentrationCostLabel,
+          concentrationIngenuityNote: row.concentrationIngenuityNote,
           profitPerConcentrationCopper: row.concentrationProfitPerConcentrationCopper ?? row.profitPerConcentrationCopper,
           profitPerConcentration: row.concentrationProfitPerConcentration ?? row.profitPerConcentration,
           planningProfitPerConcentrationCopper: row.concentrationProfitPerConcentrationCopper ?? row.profitPerConcentrationCopper,
@@ -753,10 +824,12 @@ function buildConcentrationVariantRows(rows) {
 
     for (const variant of variants) {
       const concentrationCost = Math.round(Number(variant.concentrationCost ?? row.concentrationCost ?? 0));
+      const effectiveConcentrationCost = Number(variant.effectiveConcentrationCost ?? row.effectiveConcentrationCost ?? concentrationCost);
       const averageProfitCopper = Number(variant.planningAverageProfitCopper ?? variant.concentrationAverageProfitCopper ?? row.concentrationAverageProfitCopper ?? row.averageProfitCopper ?? 0);
       if (concentrationCost <= 0 || averageProfitCopper <= 0) continue;
       const expectedYieldPerCraft = Number(variant.expectedYieldPerCraft ?? row.yieldPerCraft ?? 1);
-      const profitPerConcentrationCopper = averageProfitCopper / concentrationCost;
+      const planningConcentrationCost = Math.max(0, effectiveConcentrationCost || concentrationCost);
+      const profitPerConcentrationCopper = planningConcentrationCost > 0 ? averageProfitCopper / planningConcentrationCost : 0;
       const rank = Number(variant.rank ?? 1);
       const optionID = [
         row.itemID,
@@ -781,6 +854,12 @@ function buildConcentrationVariantRows(rows) {
         expectedYieldPerCraftFormatted: formatQuantity(expectedYieldPerCraft),
         concentrationCost,
         concentrationCostFormatted: formatNumber(concentrationCost),
+        effectiveConcentrationCost: planningConcentrationCost,
+        effectiveConcentrationCostFormatted: formatNumber(planningConcentrationCost),
+        concentrationCostLabel: formatConcentrationCost(concentrationCost, planningConcentrationCost),
+        concentrationIngenuityNote: variant.concentrationIngenuityNote ?? row.concentrationIngenuityNote ?? "",
+        expectedIngenuityRefund: Math.max(0, concentrationCost - planningConcentrationCost),
+        expectedIngenuityRefundFormatted: formatNumber(Math.max(0, concentrationCost - planningConcentrationCost)),
         averageProfitCopper,
         averageProfit: formatCopper(averageProfitCopper),
         profitPerConcentrationCopper,
@@ -818,13 +897,14 @@ function buildConcentrationVariantRows(rows) {
   return options.sort((a, b) =>
     b.profitPerConcentrationCopper - a.profitPerConcentrationCopper ||
     b.averageProfitCopper - a.averageProfitCopper ||
+    a.effectiveConcentrationCost - b.effectiveConcentrationCost ||
     a.concentrationCost - b.concentrationCost
   );
 }
 
 function getOptionBudgetStats(option, budget) {
   budget = Math.max(0, Math.floor(Number(budget ?? 0)));
-  const concentrationCost = Math.max(0, Math.round(Number(option?.concentrationCost ?? 0)));
+  const concentrationCost = Math.max(0, Math.round(Number(option?.effectiveConcentrationCost ?? option?.concentrationCost ?? 0)));
   const averageProfitCopper = Number(option?.averageProfitCopper ?? 0);
   const crafts = concentrationCost > 0 ? Math.floor(budget / concentrationCost) : 0;
   const usedConcentration = crafts * concentrationCost;
@@ -855,12 +935,17 @@ function buildPlannerCandidatePool(options, budget, limit = 720) {
   addSorted((a, b) =>
     getOptionBudgetStats(b, budget).totalProfitCopper - getOptionBudgetStats(a, budget).totalProfitCopper ||
     b.profitPerConcentrationCopper - a.profitPerConcentrationCopper ||
-    a.concentrationCost - b.concentrationCost,
+    a.effectiveConcentrationCost - b.effectiveConcentrationCost,
     220,
   );
   addSorted((a, b) => b.profitPerConcentrationCopper - a.profitPerConcentrationCopper, 180);
   addSorted((a, b) => b.averageProfitCopper - a.averageProfitCopper, 140);
-  addSorted((a, b) => a.concentrationCost - b.concentrationCost || b.averageProfitCopper - a.averageProfitCopper, 140);
+  addSorted((a, b) =>
+    a.effectiveConcentrationCost - b.effectiveConcentrationCost ||
+    a.concentrationCost - b.concentrationCost ||
+    b.averageProfitCopper - a.averageProfitCopper,
+    140,
+  );
 
   const byRecipe = new Map();
   for (const option of valid) {
@@ -885,8 +970,8 @@ function buildPlannerCandidatePool(options, budget, limit = 720) {
     ));
     add(group.reduce((best, option) =>
       !best ||
-      option.concentrationCost < best.concentrationCost ||
-      (option.concentrationCost === best.concentrationCost && option.averageProfitCopper > best.averageProfitCopper)
+      option.effectiveConcentrationCost < best.effectiveConcentrationCost ||
+      (option.effectiveConcentrationCost === best.effectiveConcentrationCost && option.averageProfitCopper > best.averageProfitCopper)
         ? option
         : best,
       null,
@@ -924,7 +1009,9 @@ function buildConcentrationPlan(options, budget) {
     const state = dp[spent];
     if (!state) continue;
     for (const option of validOptions) {
-      const nextSpent = spent + option.concentrationCost;
+      const optionCost = Math.max(0, Math.round(Number(option.effectiveConcentrationCost ?? option.concentrationCost ?? 0)));
+      if (!optionCost) continue;
+      const nextSpent = spent + optionCost;
       if (nextSpent > budget) continue;
       const nextProfit = state.profit + option.averageProfitCopper;
       if (!dp[nextSpent] || nextProfit > dp[nextSpent].profit) {
@@ -961,8 +1048,12 @@ function buildConcentrationPlan(options, budget) {
         crafts,
         itemsProduced: crafts * option.expectedYieldPerCraft,
         itemsProducedFormatted: formatQuantity(crafts * option.expectedYieldPerCraft),
-        totalConcentration: crafts * option.concentrationCost,
-        totalConcentrationFormatted: formatNumber(crafts * option.concentrationCost),
+        totalConcentration: crafts * option.effectiveConcentrationCost,
+        totalConcentrationFormatted: formatNumber(crafts * option.effectiveConcentrationCost),
+        totalRawConcentration: crafts * option.concentrationCost,
+        totalRawConcentrationFormatted: formatNumber(crafts * option.concentrationCost),
+        totalExpectedIngenuityRefund: Math.max(0, crafts * (option.concentrationCost - (option.effectiveConcentrationCost ?? option.concentrationCost))),
+        totalExpectedIngenuityRefundFormatted: formatNumber(Math.max(0, crafts * (option.concentrationCost - (option.effectiveConcentrationCost ?? option.concentrationCost)))),
         totalProfitCopper: crafts * option.averageProfitCopper,
         totalProfit: formatCopper(crafts * option.averageProfitCopper),
         shoppingItems,
@@ -1581,8 +1672,8 @@ function renderHtml(report) {
       flex-wrap: wrap;
       margin-bottom: 8px;
     }
-    .craft-path-head strong { color: var(--ink); }
-    .craft-path-head span { color: var(--muted); font-size: 13px; }
+    .craft-path-head strong { color: var(--ink); display: block; margin-bottom: 3px; }
+    .craft-path-head span { color: var(--muted); font-size: 13px; display: block; line-height: 1.35; }
     .path-items { display: flex; flex-wrap: wrap; gap: 6px; }
     .path-item {
       border: 1px solid rgba(255,255,255,.11);
@@ -1785,8 +1876,8 @@ function renderHtml(report) {
       .command { grid-template-columns: 1fr; }
       .card-side { justify-items: start; }
       .card-actions { justify-content: flex-start; }
-      .tablist { overflow-x: auto; padding-bottom: 12px; }
-      .tab-button { white-space: nowrap; }
+      .tablist { flex-wrap: wrap; overflow-x: visible; padding-bottom: 12px; }
+      .tab-button { white-space: nowrap; flex: 1 1 auto; }
     }
   </style>
 </head>
@@ -1795,7 +1886,7 @@ function renderHtml(report) {
     <header>
       <div>
         <h1>Craft Plan</h1>
-        <p class="lede">Plain craft calls from CraftSim profit plus market quantity movement. Click a line for the messy evidence.</p>
+        <p class="lede">Craft from the top down. Open a line only when you want prices, demand, or the exact reagent path.</p>
       </div>
       <div class="stamp">
         <div>Snapshot: <strong id="snapshot"></strong></div>
@@ -1863,7 +1954,7 @@ function renderHtml(report) {
     if (!report.summary.matchedProfitRecords) {
       notice.innerHTML = '<div class="notice">No profit records matched yet. In WoW, run CraftSim Recipe Scan or open a recipe and use <code>/cpe open</code>, then <code>/reload</code> and rebuild this report.</div>';
     } else {
-      notice.innerHTML = '<div class="notice">Batch craft ignores concentration recipes. The concentration tab shows every saved concentration recipe, with profitable paths first and loss-making Q1/Q2 comparisons still available in details.</div>';
+      notice.innerHTML = '<div class="notice">Batch craft skips concentration. Use the Concentration and Weekly concentration tabs for scarce-resource crafts.</div>';
     }
     renderRows("#panel-batch", report.recommendations, "batch");
     renderRows("#panel-concentration", report.concentrationRecommendations || [], "concentration");
@@ -1920,8 +2011,9 @@ function renderHtml(report) {
                     '<div class="sentence">Craft <b>' + Number(item.crafts || 0).toLocaleString() + '</b> ' + escapeHtml(item.displayName || item.name) +
                       ' variant #' + escapeHtml(item.variantRank || 1) + ' for <span class="profit">' + escapeHtml(item.totalProfit) + '</span> weekly profit.</div>' +
                     '<div class="tag-row">' +
-                      tag(item.totalConcentrationFormatted + " concentration", "concentration") +
-                      tag(item.profitPerConcentration + " per concentration", "rate") +
+                      tag(item.totalConcentrationFormatted + " expected conc", "concentration") +
+                      (item.totalRawConcentrationFormatted && item.totalRawConcentrationFormatted !== item.totalConcentrationFormatted ? tag(item.totalRawConcentrationFormatted + " raw conc", "concentration") : "") +
+                      tag(item.profitPerConcentration + " per expected conc", "rate") +
                       tag(item.qualityProfileShort || "optimizer path", "quality") +
                       tag((item.dailyDropProxyFormatted || "n/a") + "/day", "market-" + (item.marketConfidenceLevel || "steady")) +
                       tag(item.marketConfidenceLabel || "market check", "market-" + (item.marketConfidenceLevel || "steady")) +
@@ -1941,11 +2033,14 @@ function renderHtml(report) {
                 renderWeeklyCraftPath(item, shoppingKey) +
                 '<div class="detail-grid">' +
                   metric("Variant", "#" + (item.variantRank || 1)) +
-                  metric("Concentration/craft", item.concentrationCostFormatted) +
+                  metric("Expected conc/craft", item.effectiveConcentrationCostFormatted || item.concentrationCostFormatted) +
+                  (item.effectiveConcentrationCostFormatted !== item.concentrationCostFormatted ? metric("Raw conc/craft", item.concentrationCostFormatted) : "") +
                   metric("Crafts", Number(item.crafts || 0).toLocaleString()) +
-                  metric("Total concentration", item.totalConcentrationFormatted) +
+                  metric("Total expected conc", item.totalConcentrationFormatted) +
+                  (item.totalRawConcentrationFormatted !== item.totalConcentrationFormatted ? metric("Total raw conc", item.totalRawConcentrationFormatted) : "") +
+                  (Number(item.totalExpectedIngenuityRefund || 0) > 0 ? metric("Avg Ingenuity refund", item.totalExpectedIngenuityRefundFormatted) : "") +
                   metric("Profit/craft", item.averageProfit) +
-                  metric("Profit/concentration", item.profitPerConcentration) +
+                  metric("Profit/expected conc", item.profitPerConcentration) +
                   metric("Ingredient path", item.qualityProfile || item.allocationText || "optimizer path") +
                   metric("Yield/craft", item.expectedYieldPerCraftFormatted) +
                   metric("Daily drop proxy", item.dailyDropProxyFormatted || "n/a") +
@@ -1961,17 +2056,18 @@ function renderHtml(report) {
         '<section class="weekly-planner">' +
           '<div class="weekly-head">' +
             '<div>' +
-              '<h2>Weekly concentration maxing</h2>' +
-              '<p class="lede">Treat concentration as a budget. The planner skips very low-movement markets by default, then chooses the best variant mix under that cap.</p>' +
+              '<h2>Weekly concentration plan</h2>' +
+              '<p class="lede">Treat concentration as a budget. When Ingenuity data is available, the planner uses expected concentration after refunds and keeps the raw cost in details.</p>' +
             '</div>' +
             '<label class="budget-control">Budget <input id="concentration-budget" type="number" min="0" step="1" value="' + escapeAttr(budget) + '"></label>' +
           '</div>' +
           '<div class="weekly-summary">' +
             metric("Planned profit", plan.totalProfit || "0c") +
-            metric("Used concentration", (plan.usedConcentrationFormatted || "0") + " / " + Number(budget).toLocaleString()) +
+            metric("Expected concentration", (plan.usedConcentrationFormatted || "0") + " / " + Number(budget).toLocaleString()) +
             metric("Leftover", plan.leftoverConcentrationFormatted || Number(budget).toLocaleString()) +
             metric("Crafts", Number(plan.totalCrafts || 0).toLocaleString()) +
           '</div>' +
+          (!Number(report.summary && report.summary.ingenuityAdjustedVariantCount || 0) ? '<div class="notice">Ingenuity refund math will appear after you rescan with this updated addon. Until then, concentration uses raw CraftSim cost.</div>' : '') +
           (plan.marketFilteredCount ? '<div class="notice">' + Number(plan.marketFilteredCount).toLocaleString() + ' profitable low-movement variant(s) stayed out of the weekly spender. They are still visible in the Concentration tab.</div>' : '') +
         '</section>' +
         rows;
@@ -2021,16 +2117,16 @@ function renderHtml(report) {
       const dailyDropLabel = concentrationMode ? row.concentrationDailyDropProxyFormatted || row.dailyDropProxyFormatted : row.dailyDropProxyFormatted;
       const tags = [
         (concentrationMode ? row.concentrationQualityLabel || row.qualityLabel : row.qualityLabel) ? tag(concentrationMode ? row.concentrationQualityLabel || row.qualityLabel : row.qualityLabel, "quality") : "",
-        row.usesConcentration ? tag("concentration " + (concentrationMode ? row.concentrationBestCostFormatted || row.concentrationCostFormatted : row.concentrationCostFormatted), "concentration") : "",
+        row.usesConcentration ? tag("conc " + (concentrationMode ? row.concentrationBestCostLabel || row.concentrationCostLabel || row.concentrationCostFormatted : row.concentrationCostLabel || row.concentrationCostFormatted), "concentration") : "",
         tag("profit/craft " + (concentrationMode ? row.concentrationBestProfit || row.averageProfit : row.averageProfit)),
-        concentrationMode ? tag((row.concentrationBestPerPoint || row.profitPerConcentration) + " per concentration", "rate") : "",
+        concentrationMode ? tag((row.concentrationBestPerPoint || row.profitPerConcentration) + " per expected conc", "rate") : "",
         dailyDropLabel ? tag(dailyDropLabel + "/day", "market-" + (marketLevel || "steady")) : "",
         marketLabel ? tag(marketLabel, "market-" + (marketLevel || "steady")) : "",
       ].join("");
       const sentence = concentrationMode
         ? (cardProfitCopper > 0
-          ? 'Craft <b>1</b> ' + name + ' using ' + escapeHtml(row.concentrationBestPath || "best saved path") + ' for <span class="' + profitClass + '">' + escapeHtml(row.concentrationBestProfit || row.averageProfit) + '</span> profit at <b>' + escapeHtml(row.concentrationBestCostFormatted || row.concentrationCostFormatted || "0") + '</b> concentration.'
-          : 'Do not craft ' + name + ' today: best saved path is <span class="' + profitClass + '">' + escapeHtml(row.concentrationBestProfit || row.averageProfit) + '</span> per craft at <b>' + escapeHtml(row.concentrationBestCostFormatted || row.concentrationCostFormatted || "0") + '</b> concentration. Open details for Q1/Q2 paths.')
+          ? 'Craft <b>1</b> ' + name + ' using ' + escapeHtml(row.concentrationBestPath || "best saved path") + ' for <span class="' + profitClass + '">' + escapeHtml(row.concentrationBestProfit || row.averageProfit) + '</span> profit at <b>' + escapeHtml(row.concentrationBestCostLabel || row.concentrationCostLabel || row.concentrationCostFormatted || "0") + '</b>.'
+          : 'Do not craft ' + name + ' today: best saved path is <span class="' + profitClass + '">' + escapeHtml(row.concentrationBestProfit || row.averageProfit) + '</span> per craft at <b>' + escapeHtml(row.concentrationBestCostLabel || row.concentrationCostLabel || row.concentrationCostFormatted || "0") + '</b>. Open details for Q1/Q2 paths.')
         : 'Craft <b>' + row.suggestedCrafts.toLocaleString() + '</b> ' + name + ' (' + row.suggestedItemsFormatted + ' items) for <span class="' + profitClass + '">' + row.expectedProfit + '</span> profit today.';
       return '<details class="craft-card" data-card-key="' + escapeAttr(cardKey) + '"' + open + '>' +
         '<summary>' +
@@ -2059,8 +2155,10 @@ function renderHtml(report) {
 
     function renderDetailGrid(row, concentrationMode) {
       const metrics = [
-        ["Concentration", row.usesConcentration ? (concentrationMode ? row.concentrationBestCostFormatted || row.concentrationCostFormatted : row.concentrationCostFormatted) + " per craft" : ""],
-        ["Profit/concentration", row.usesConcentration ? (concentrationMode ? row.concentrationBestPerPoint || row.profitPerConcentration : row.profitPerConcentration) : ""],
+        ["Expected conc", row.usesConcentration ? (concentrationMode ? row.concentrationBestCostLabel || row.concentrationCostLabel : row.concentrationCostLabel || row.concentrationCostFormatted) + " per craft" : ""],
+        ["Raw conc", row.usesConcentration && concentrationMode && row.concentrationBestRawCostFormatted !== row.concentrationBestCostFormatted ? (row.concentrationBestRawCostFormatted + " before Ingenuity") : ""],
+        ["Profit/expected conc", row.usesConcentration ? (concentrationMode ? row.concentrationBestPerPoint || row.profitPerConcentration : row.profitPerConcentration) : ""],
+        ["Ingenuity", concentrationMode ? row.concentrationBestIngenuityNote || row.concentrationIngenuityNote : row.concentrationIngenuityNote],
         ["Yield/craft", row.yieldPerCraftFormatted],
         ["7d drop proxy", concentrationMode ? row.concentrationSevenDayDropProxyFormatted || row.sevenDayDropProxyFormatted : row.sevenDayDropProxyFormatted],
         ["Daily drop proxy", concentrationMode ? row.concentrationDailyDropProxyFormatted || row.dailyDropProxyFormatted : row.dailyDropProxyFormatted],
@@ -2112,7 +2210,7 @@ function renderHtml(report) {
           '<td>#' + variant.rank + '</td>' +
           '<td class="quality-path"><strong>' + escapeHtml(variant.qualityProfileShort || "Optimizer path") + '</strong><span>' + escapeHtml(variant.qualityTierSummary || variant.qualityProfile || "") + '</span></td>' +
           '<td class="money">' + variantProfit + '</td>' +
-          '<td>' + escapeHtml(variant.concentrationCostFormatted || "0") + '</td>' +
+          '<td>' + escapeHtml(variant.concentrationCostLabel || variant.effectiveConcentrationCostFormatted || variant.concentrationCostFormatted || "0") + '</td>' +
           '<td class="money">' + escapeHtml(variantProfitPerConcentration || "n/a") + '</td>' +
           '<td>' + budgetStats.crafts.toLocaleString() + 'x</td>' +
           '<td class="money">' + formatCopperBrowser(budgetStats.totalProfitCopper) + '</td>' +
@@ -2132,7 +2230,7 @@ function renderHtml(report) {
         '<details class="optimizer-table-toggle">' +
           '<summary>Show variant table (' + tableVariants.length.toLocaleString() + ' selected path' + (tableVariants.length === 1 ? "" : "s") + ')</summary>' +
           '<div class="table-scroll"><table class="variant-table">' +
-            '<thead><tr><th>Rank</th><th>Path</th><th>Profit/craft</th><th>Conc</th><th>Profit/conc</th><th>Crafts @ budget</th><th>Budget profit</th><th>Mats/craft</th><th>Output</th><th>Ingredients</th><th>List</th></tr></thead>' +
+            '<thead><tr><th>Rank</th><th>Path</th><th>Profit/craft</th><th>Expected conc</th><th>Profit/conc</th><th>Crafts @ budget</th><th>Budget profit</th><th>Mats/craft</th><th>Output</th><th>Ingredients</th><th>List</th></tr></thead>' +
             '<tbody>' + rows + '</tbody>' +
           '</table></div>' +
         '</details>' +
@@ -2157,7 +2255,7 @@ function renderHtml(report) {
         return '<div class="strategy-card ' + (strategy.best ? "best" : "") + '">' +
           '<div class="strategy-title"><strong>' + escapeHtml(strategy.label) + '</strong><span>' + escapeHtml(variant.qualityProfileShort || "Optimizer path") + '</span></div>' +
           '<div class="strategy-stats">' +
-            '<div class="strategy-stat"><b>' + escapeHtml(variant.concentrationCostFormatted || "0") + '</b>conc/craft</div>' +
+            '<div class="strategy-stat"><b>' + escapeHtml(variant.effectiveConcentrationCostFormatted || variant.concentrationCostFormatted || "0") + '</b>expected conc/craft</div>' +
             '<div class="strategy-stat"><b>' + stats.crafts.toLocaleString() + 'x</b>fits budget</div>' +
             '<div class="strategy-stat"><b>' + formatCopperBrowser(stats.totalProfitCopper) + '</b>budget profit</div>' +
             '<div class="strategy-stat"><b>' + formatNumberBrowser(stats.leftoverConcentration) + '</b>conc left</div>' +
@@ -2188,12 +2286,12 @@ function renderHtml(report) {
       for (const strategy of pickOptimizerStrategies(variants || [], budget)) add(strategy.variant);
       const profileRows = [...groupBestByProfile(variants || [], budget).values()].sort((a, b) =>
         Number(a.qualityProfileRank || 0) - Number(b.qualityProfileRank || 0) ||
-        Number(a.concentrationCost || 0) - Number(b.concentrationCost || 0) ||
+        variantConcentrationCost(a) - variantConcentrationCost(b) ||
         variantProfitCopper(b) - variantProfitCopper(a)
       );
       for (const variant of profileRows.slice(0, 8)) add(variant);
       const lowConcentrationRows = [...(variants || [])].sort((a, b) =>
-        Number(a.concentrationCost || 0) - Number(b.concentrationCost || 0) ||
+        variantConcentrationCost(a) - variantConcentrationCost(b) ||
         variantProfitCopper(b) - variantProfitCopper(a)
       );
       for (const variant of lowConcentrationRows.slice(0, 4)) add(variant);
@@ -2206,6 +2304,10 @@ function renderHtml(report) {
 
     function variantProfitPerConcentrationCopper(variant) {
       return Number(variant && (variant.planningProfitPerConcentrationCopper ?? variant.concentrationProfitPerConcentrationCopper ?? variant.profitPerConcentrationCopper) || 0);
+    }
+
+    function variantConcentrationCost(variant) {
+      return Math.max(0, Number(variant && (variant.effectiveConcentrationCost ?? variant.concentrationCost) || 0));
     }
 
     function pickOptimizerStrategies(variants, budget) {
@@ -2235,13 +2337,13 @@ function renderHtml(report) {
         if (variantStats.crafts !== bestStats.crafts) {
           return variantStats.crafts > bestStats.crafts ? variant : best;
         }
-        return Number(variant.concentrationCost || 0) < Number(best.concentrationCost || 0) ? variant : best;
+        return variantConcentrationCost(variant) < variantConcentrationCost(best) ? variant : best;
       }, null);
       add("budget", "Best with this budget", bestBudget, true);
 
       const profileRows = [...groupBestByProfile(valid, budget).values()].sort((a, b) =>
         Number(a.qualityProfileRank || 0) - Number(b.qualityProfileRank || 0) ||
-        Number(a.concentrationCost || 0) - Number(b.concentrationCost || 0) ||
+        variantConcentrationCost(a) - variantConcentrationCost(b) ||
         variantProfitCopper(b) - variantProfitCopper(a)
       );
       for (const variant of profileRows.slice(0, 5)) {
@@ -2254,8 +2356,8 @@ function renderHtml(report) {
       ));
       add("low-conc", "Lowest concentration", valid.reduce((best, variant) =>
         !best ||
-        Number(variant.concentrationCost || 0) < Number(best.concentrationCost || 0) ||
-        (Number(variant.concentrationCost || 0) === Number(best.concentrationCost || 0) && variantProfitCopper(variant) > variantProfitCopper(best))
+        variantConcentrationCost(variant) < variantConcentrationCost(best) ||
+        (variantConcentrationCost(variant) === variantConcentrationCost(best) && variantProfitCopper(variant) > variantProfitCopper(best))
           ? variant
           : best,
         null
@@ -2283,7 +2385,7 @@ function renderHtml(report) {
 
     function getVariantBudgetStats(variant, budget) {
       budget = Math.max(0, Math.floor(Number(budget || 0)));
-      const concentrationCost = Math.max(0, Math.round(Number(variant?.concentrationCost || 0)));
+      const concentrationCost = Math.max(0, Math.round(variantConcentrationCost(variant)));
       const averageProfitCopper = variantProfitCopper(variant);
       const crafts = concentrationCost > 0 ? Math.floor(budget / concentrationCost) : 0;
       const usedConcentration = crafts * concentrationCost;
@@ -2366,14 +2468,14 @@ function renderHtml(report) {
         if (Number(row.concentrationBestProfitCopper || 0) <= 0) {
           return "Do not craft " + name + " today. Best saved path is " +
             (row.concentrationBestProfit || row.averageProfit) + " per craft at " +
-            (row.concentrationBestCostFormatted || row.concentrationCostFormatted || "0") +
-            " concentration.";
+            (row.concentrationBestCostLabel || row.concentrationCostLabel || row.concentrationCostFormatted || "0") +
+            ".";
         }
         return "Craft 1 " + name + " using " +
           (row.concentrationBestPath || "best saved path") + " for " +
           (row.concentrationBestProfit || row.averageProfit) + " profit at " +
-          (row.concentrationBestCostFormatted || row.concentrationCostFormatted || "0") +
-          " concentration.";
+          (row.concentrationBestCostLabel || row.concentrationCostLabel || row.concentrationCostFormatted || "0") +
+          ".";
       }
       const base = "Craft " + row.suggestedCrafts.toLocaleString() + " " +
         (row.displayName || row.name) + " (" + row.suggestedItemsFormatted + " items) for " +
@@ -2425,7 +2527,8 @@ function renderHtml(report) {
         const state = dp[spent];
         if (!state) continue;
         for (const option of valid) {
-          const cost = Math.round(Number(option.concentrationCost || 0));
+          const cost = Math.round(variantConcentrationCost(option));
+          if (!cost) continue;
           const nextSpent = spent + cost;
           if (nextSpent > budget) continue;
           const nextProfit = state.profit + Number(option.averageProfitCopper || 0);
@@ -2456,8 +2559,12 @@ function renderHtml(report) {
           crafts,
           itemsProduced: produced,
           itemsProducedFormatted: formatQuantityBrowser(produced),
-          totalConcentration: crafts * Number(option.concentrationCost || 0),
-          totalConcentrationFormatted: formatNumberBrowser(crafts * Number(option.concentrationCost || 0)),
+          totalConcentration: crafts * variantConcentrationCost(option),
+          totalConcentrationFormatted: formatNumberBrowser(crafts * variantConcentrationCost(option)),
+          totalRawConcentration: crafts * Number(option.concentrationCost || 0),
+          totalRawConcentrationFormatted: formatNumberBrowser(crafts * Number(option.concentrationCost || 0)),
+          totalExpectedIngenuityRefund: Math.max(0, crafts * (Number(option.concentrationCost || 0) - variantConcentrationCost(option))),
+          totalExpectedIngenuityRefundFormatted: formatNumberBrowser(Math.max(0, crafts * (Number(option.concentrationCost || 0) - variantConcentrationCost(option)))),
           totalProfitCopper: crafts * Number(option.averageProfitCopper || 0),
           totalProfit: formatCopperBrowser(crafts * Number(option.averageProfitCopper || 0)),
           shoppingItems: multiplyShoppingItemsBrowser(option.shoppingItems || [], crafts),
@@ -2750,7 +2857,7 @@ function renderHtml(report) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = "craft-plan-silvermoon-" + fileDate(new Date(report.generatedAtUtc)) + ".png";
+        link.download = "craft-plan-" + fileSlug(report.source.realm || "realm") + "-" + fileDate(new Date(report.generatedAtUtc)) + ".png";
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -2761,10 +2868,15 @@ function renderHtml(report) {
 
     async function regenerateReport() {
       const status = document.querySelector("#share-status");
-      const appBase = "http://127.0.0.1:8791";
+      const defaultAppBase = "http://127.0.0.1:8791";
+      const appBase = window.location.protocol.startsWith("http") ? window.location.origin : defaultAppBase;
+      const apiToken = window.CRAFTINGBUDDY_API_TOKEN || "";
       status.textContent = "Regenerating report...";
       try {
-        const response = await fetch(appBase + "/api/generate", { method: "POST" });
+        const response = await fetch(appBase + "/api/generate", {
+          method: "POST",
+          headers: apiToken ? { "x-craftingbuddy-token": apiToken } : {},
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok) {
           throw new Error(payload.error || "app returned " + response.status);
@@ -2775,7 +2887,7 @@ function renderHtml(report) {
           else window.location.href = appBase + "/report";
         }, 600);
       } catch (error) {
-        status.textContent = "Open CraftPlanApp.exe first, then press Regenerate again. The app handles report generation.";
+        status.textContent = "Open this report from CraftingBuddy first, then press Regenerate again. The app handles report generation.";
       }
     }
 
@@ -2785,6 +2897,7 @@ function renderHtml(report) {
       const generated = new Date(report.generatedAtUtc).toLocaleString();
       const snapshot = new Date(report.source.snapshotUtc).toLocaleString();
       const marketLabel = report.source.marketSourceLabel || "Market";
+      const realmLabel = report.source.realm || "Unknown realm";
       const bg = ctx.createLinearGradient(0, 0, width, height);
       bg.addColorStop(0, "#07110d");
       bg.addColorStop(.58, "#101511");
@@ -2800,7 +2913,7 @@ function renderHtml(report) {
       ctx.fillText("Craft Plan", 68, 104);
       ctx.fillStyle = "#a6aa9b";
       ctx.font = "24px Bahnschrift, Aptos, sans-serif";
-      ctx.fillText("Silvermoon EU  |  " + generated, 72, 148);
+      ctx.fillText(realmLabel + "  |  " + generated, 72, 148);
       ctx.fillText(marketLabel + " snapshot: " + snapshot, 72, 182);
 
       drawStat(ctx, 72, 228, "Batch", report.summary.candidateCount);
@@ -2927,6 +3040,11 @@ function renderHtml(report) {
       const pad = (number) => String(number).padStart(2, "0");
       return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) + "-" + pad(date.getHours()) + pad(date.getMinutes());
     }
+
+    function fileSlug(value) {
+      return String(value || "realm").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "realm";
+    }
+
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     }

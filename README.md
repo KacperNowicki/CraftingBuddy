@@ -12,7 +12,7 @@ It is not a bot and it does not post auctions. It turns your own CraftSim scan p
 - Reads CraftSim profit and ingredient-quality variants without modifying CraftSim.
 - Reads your realm from the addon export.
 - Pulls market data from Undermine API when you save a key, or Goblin Exchange as fallback.
-- Builds a local dark-mode report with batch crafts, concentration crafts, weekly concentration planning, and Auctionator shopping-list export.
+- Builds a local dark-mode report with batch crafts, concentration crafts, weekly concentration planning that accounts for Ingenuity refunds when exported, and Auctionator shopping-list export.
 - Checks GitHub Releases for app updates and stages new builds locally before install.
 - Uses the same CraftingBuddy gem icon in the Windows app and addon minimap button.
 

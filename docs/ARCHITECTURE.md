@@ -49,6 +49,7 @@ Responsibilities:
 - Generate the report.
 - Check GitHub Releases for a newer `CraftPlanApp.exe`.
 - Download a release asset into `updates/` and, when running as the packaged exe, restart to replace the app.
+- Protect local API routes with a per-launch browser token plus loopback host/origin checks.
 
 Storage:
 
@@ -66,7 +67,7 @@ Updater flow:
 
 1. `GET /api/update/check` reads the latest GitHub release.
 2. The app compares the release tag with the local `package.json` version.
-3. `POST /api/update/download` downloads the release asset named `CraftPlanApp.exe` into `updates/`.
+3. `POST /api/update/download` downloads the release asset named exactly `CraftPlanApp.exe` into `updates/`.
 4. The staged download is recorded in `updates/latest.json` with size, version, source release, and SHA-256.
 5. `POST /api/update/apply` works only in the packaged exe. It starts a small PowerShell script, exits the running app, copies the staged exe over the current exe, and starts it again.
 
@@ -109,7 +110,7 @@ The report is intentionally static. It embeds the calculated JSON so it can be o
 Report responsibilities:
 
 - Show batch crafts separately from concentration crafts.
-- Rank concentration variants by profit per concentration and budget fit.
+- Rank concentration variants by budget fit and profit per expected concentration, using CraftSim-style Ingenuity refund math when exported.
 - Show market confidence using movement and stock.
 - Preserve exact reagent quality in craft paths and shopping-list payloads.
 - Hide dense optimizer tables by default.
@@ -128,6 +129,12 @@ Paths:
 
 - WoW folder selection must point to a folder containing `_retail_`.
 - Addon install writes only to `_retail_\Interface\AddOns\CraftPlanExporter`.
+
+Local app API:
+
+- Helper API routes require a per-launch token embedded into the served app page.
+- The server rejects non-loopback host/origin headers and does not expose wildcard CORS.
+- The generated report can call **Regenerate** only when served by the helper app, because the app injects the current token into `/report`.
 
 Profit:
 

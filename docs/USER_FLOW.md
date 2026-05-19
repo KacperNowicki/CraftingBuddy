@@ -82,5 +82,7 @@ Default behavior:
 
 - use current character concentration when exported
 - otherwise assume 1000
+- use expected concentration after Ingenuity refunds when the updated addon export includes it
 - skip very low movement markets in the weekly planner
 - still show low movement recipes in the concentration tab for manual investigation
+- show raw concentration cost only as detail when it differs from expected cost

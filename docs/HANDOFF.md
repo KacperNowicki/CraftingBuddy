@@ -1,6 +1,6 @@
 # CraftingBuddy Handoff
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 ## Current State
 
@@ -44,7 +44,7 @@ npm run build:exe
 Release updater check:
 
 ```powershell
-gh release create v0.3.5 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.5" --notes "Adds CraftingBuddy app and addon icons."
+gh release create v0.3.6 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.6" --notes "Adds Ingenuity-aware concentration planning and report UX polish."
 ```
 
 The app updater reads GitHub Releases and expects the asset to be named `CraftPlanApp.exe`.
@@ -57,16 +57,27 @@ Report generation from source expects a local WoW SavedVariables export:
 node .\scripts\build-craft-plan.mjs
 ```
 
+Recent verification also covered:
+
+```powershell
+node .\scripts\build-craft-plan.mjs --concentration-budget 1000
+```
+
+The generated report was opened with Playwright through a local static server on `127.0.0.1:4177`.
+
 ## Product Decisions
 
 - CraftSim remains untouched. CraftPlan Exporter reads CraftSim data through available Lua APIs and saved UI state.
 - Auctionator remains untouched. CraftingBuddy can create shopping-list payloads that the addon passes into Auctionator.
 - The app writes local config/runtime/report files next to the executable/source checkout, not AppData.
 - The app updater stages release assets in `updates/` and only applies them from the packaged exe.
+- The local helper API requires a per-launch browser token and loopback host/origin checks. Reports served through the app receive that token for the **Regenerate** button; reports opened directly from disk cannot call the API.
+- The updater only accepts the exact release asset name `CraftPlanApp.exe`.
 - The selected icon is "Gem Spark" from `assets/icons/preview.html`; the addon minimap button uses the generated TGA in `CraftPlanExporter/Media/`.
 - Undermine API keys are optional and stored through Windows user-scope protection when possible.
 - Goblin Exchange remains a no-key fallback.
 - Weekly concentration planning excludes very low movement markets by default.
+- Weekly concentration planning uses expected concentration after CraftSim-style Ingenuity refunds when the updated addon export includes those fields, and falls back to raw concentration for older scans.
 - Report cards show demand confidence and keep optimizer tables collapsed.
 
 ## Known Risks
@@ -83,5 +94,5 @@ node .\scripts\build-craft-plan.mjs
 1. Add screenshots or a short demo GIF for the README and GitHub Pages.
 2. Add release workflow or documented manual release steps.
 3. Add a tiny fixture-based test for report JSON ranking.
-4. Improve addon panel copy so "Scan all + variants" is unmistakable in game.
+4. Add an in-addon completion hint after **Scan all + variants** so players know when to type `/reload`.
 5. Add a beginner mode in the report that hides all negative/rarely-bought rows unless toggled.
