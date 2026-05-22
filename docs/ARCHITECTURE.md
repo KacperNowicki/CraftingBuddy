@@ -114,6 +114,7 @@ Report responsibilities:
 - Rank concentration variants by budget fit and profit per expected concentration, using CraftSim-style Ingenuity refund math when exported.
 - Show market confidence using movement and stock.
 - Preserve exact reagent quality in craft paths and shopping-list payloads.
+- Copy Auctionator shopping payloads as one-line encoded `CPE_AUCTIONATOR_LIST_V2` text; the addon keeps backward compatibility with older tab/newline `V1` payloads.
 - Hide dense optimizer tables by default.
 
 ## Trust Model

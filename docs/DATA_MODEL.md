@@ -78,16 +78,15 @@ Concentration planning fields:
 
 ## Shopping Payload
 
-The report copies a simple text payload into the addon paste box.
+The report copies a single-line text payload into the addon paste box. Fields are pipe-delimited and item/list names are URL-encoded so browser and WoW edit boxes cannot strip tab characters from the list.
 
 Shape:
 
 ```text
-CPE_AUCTIONATOR_LIST_V1
-list    CraftPlan - Example
-item    Mana Lily    1    6
-item    Sunglass Vial    1    10
+CPE_AUCTIONATOR_LIST_V2|list|CraftPlan%20-%20Example|item|Mana%20Lily|1|6|item|Sunglass%20Vial|1|10
 ```
+
+The addon still accepts the older tab/newline `CPE_AUCTIONATOR_LIST_V1` shape for already-generated reports.
 
 The important part is reagent quality. `tier=1`, `tier=2`, and `tier=3` must stay distinct so the player buys the same path the optimizer recommended.
 

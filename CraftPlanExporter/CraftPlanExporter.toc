@@ -2,7 +2,7 @@
 ## Title: CraftPlan Exporter
 ## Notes: Exports CraftSim recipe profit and reagent allocation data for local craft planning.
 ## Author: etsii + Codex
-## Version: 0.3.0
+## Version: 0.3.8
 ## Dependencies: Blizzard_Professions
 ## OptionalDeps: CraftSim, Auctionator
 ## SavedVariables: CraftPlanExporterDB

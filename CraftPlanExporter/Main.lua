@@ -205,6 +205,7 @@ local function IsTimeBudgetExceeded(startMs, budgetMs)
     return (Milliseconds() - startMs) >= budgetMs
 end
 
+local NO_PRICE_INFO = {}
 local recipePriceInfoCaches = setmetatable({}, { __mode = "k" })
 
 local function GetItemSnapshot(item)
@@ -228,12 +229,19 @@ local function GetPriceInfo(recipeData, itemID)
     if not cache then
         cache = {}
         recipePriceInfoCaches[priceData] = cache
-    elseif cache[itemID] ~= nil then
-        return cache[itemID]
+    else
+        local cached = cache[itemID]
+        if cached ~= nil then
+            if cached == NO_PRICE_INFO then return nil end
+            return cached
+        end
     end
 
     local priceInfo = priceData and priceData.reagentPriceInfos and priceData.reagentPriceInfos[itemID]
-    if not priceInfo then return nil end
+    if not priceInfo then
+        cache[itemID] = NO_PRICE_INFO
+        return nil
+    end
 
     local result = {
         itemPrice = priceInfo.itemPrice,
@@ -319,13 +327,18 @@ local function ExtractReagents(recipeData)
         for qualityID, reagentItem in ipairs(reagent.items or {}) do
             local item = GetItemSnapshot(reagentItem.item)
             local quantity = SafeNumber(reagentItem.quantity, 0)
+            local price = nil
+            if quantity > 0 and item and item.itemID then
+                price = GetPriceInfo(recipeData, item.itemID)
+            end
+
             local qualityRecord = {
                 qualityID = qualityID,
                 itemID = item and item.itemID,
                 itemName = item and item.itemName,
                 itemLink = item and item.itemLink,
                 quantity = quantity,
-                price = item and item.itemID and GetPriceInfo(recipeData, item.itemID) or nil,
+                price = price,
             }
             table.insert(reagentRecord.qualities, qualityRecord)
 
@@ -901,7 +914,7 @@ function Exporter:BuildRecord(recipeData, source)
     local crafterUID = recipeData.GetCrafterUID and recipeData:GetCrafterUID() or nil
 
     return {
-        exporterVersion = "0.3.0",
+        exporterVersion = "0.3.8",
         source = source or "manual",
         optimizerSource = "CraftSim",
         exportsAllReagentChoices = true,
@@ -1867,8 +1880,79 @@ local function SplitTabLine(line)
     return fields
 end
 
+local function SplitPipeLine(line)
+    local fields = {}
+    local start = 1
+
+    while true do
+        local pipeStart = string.find(line, "|", start, true)
+        if not pipeStart then
+            table.insert(fields, string.sub(line, start))
+            break
+        end
+
+        table.insert(fields, string.sub(line, start, pipeStart - 1))
+        start = pipeStart + 1
+    end
+
+    return fields
+end
+
+local function DecodePayloadField(value)
+    value = tostring(value or "")
+    value = value:gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end)
+    return Trim(value)
+end
+
+local function AddShoppingPayloadItem(itemsByKey, orderedKeys, name, tier, quantity)
+    name = Trim(name)
+    tier = math.max(0, tonumber(tier) or 0)
+    quantity = math.max(1, math.ceil(tonumber(quantity) or 1))
+
+    if name == "" then return end
+
+    local key = string.lower(name) .. ":" .. tostring(tier)
+    if not itemsByKey[key] then
+        itemsByKey[key] = { name = name, tier = tier, quantity = 0 }
+        table.insert(orderedKeys, key)
+    end
+    itemsByKey[key].quantity = itemsByKey[key].quantity + quantity
+end
+
+local function ParseShoppingPayloadV2Fields(fields, itemsByKey, orderedKeys)
+    local listName = nil
+    local found = false
+    local index = 1
+
+    if fields[1] == "CPE_AUCTIONATOR_LIST_V2" then
+        found = true
+        index = 2
+    end
+
+    while index <= #fields do
+        local kind = fields[index]
+        if kind == "list" and fields[index + 1] then
+            listName = DecodePayloadField(fields[index + 1])
+            found = true
+            index = index + 2
+        elseif kind == "item" and fields[index + 3] then
+            AddShoppingPayloadItem(itemsByKey, orderedKeys, DecodePayloadField(fields[index + 1]), fields[index + 2],
+                fields[index + 3])
+            found = true
+            index = index + 4
+        else
+            index = index + 1
+        end
+    end
+
+    return found, listName
+end
+
 local function ParseShoppingPayload(text)
     local valid = false
+    local version = 1
     local listName = "CraftPlan Mats"
     local itemsByKey = {}
     local orderedKeys = {}
@@ -1877,23 +1961,23 @@ local function ParseShoppingPayload(text)
         line = Trim(line)
         if line == "CPE_AUCTIONATOR_LIST_V1" then
             valid = true
+            version = 1
+        elseif line == "CPE_AUCTIONATOR_LIST_V2" then
+            valid = true
+            version = 2
+        elseif string.find(line, "^CPE_AUCTIONATOR_LIST_V2|") or version == 2 then
+            local found, parsedListName = ParseShoppingPayloadV2Fields(SplitPipeLine(line), itemsByKey, orderedKeys)
+            if found then valid = true end
+            if parsedListName and parsedListName ~= "" then
+                listName = parsedListName
+            end
         else
             local fields = SplitTabLine(line)
             local kind = fields[1]
             if kind == "list" and Trim(fields[2]) ~= "" then
                 listName = Trim(fields[2])
             elseif kind == "item" then
-                local name = Trim(fields[2])
-                local tier = math.max(0, tonumber(fields[3]) or 0)
-                local quantity = math.max(1, math.ceil(tonumber(fields[4]) or 1))
-                if name ~= "" then
-                    local key = string.lower(name) .. ":" .. tostring(tier)
-                    if not itemsByKey[key] then
-                        itemsByKey[key] = { name = name, tier = tier, quantity = 0 }
-                        table.insert(orderedKeys, key)
-                    end
-                    itemsByKey[key].quantity = itemsByKey[key].quantity + quantity
-                end
+                AddShoppingPayloadItem(itemsByKey, orderedKeys, fields[2], fields[3], fields[4])
             end
         end
     end
@@ -1954,7 +2038,16 @@ function Exporter:CreateAuctionatorShoppingListFromText(text)
         return false
     end
 
-    Print("created Auctionator list '" .. listName .. "' with " .. tostring(#searchStrings) .. " item(s).")
+    local verifiedCount = nil
+    if api.GetShoppingListItems then
+        local verifyOk, createdItems = pcall(api.GetShoppingListItems, "CraftPlanExporter", listName)
+        if verifyOk and type(createdItems) == "table" then
+            verifiedCount = #createdItems
+        end
+    end
+
+    Print("created Auctionator list '" .. listName .. "' with " ..
+        tostring(verifiedCount or #searchStrings) .. " item(s). Open Auctionator > Shopping to use it.")
     return true
 end
 

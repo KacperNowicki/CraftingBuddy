@@ -1128,17 +1128,24 @@ function buildShoppingListName(displayName, rank) {
 }
 
 function formatShoppingPayload(listName, items) {
-  return [
-    "CPE_AUCTIONATOR_LIST_V1",
-    `list\t${sanitizePayloadField(listName)}`,
-    ...items.map((item) =>
-      `item\t${sanitizePayloadField(item.name)}\t${Math.max(0, Number(item.tier ?? 0) || 0)}\t${Math.max(1, Math.ceil(Number(item.quantity ?? 1)))}`
-    ),
-  ].join("\n");
+  const fields = ["CPE_AUCTIONATOR_LIST_V2", "list", encodePayloadField(listName)];
+  for (const item of items) {
+    fields.push(
+      "item",
+      encodePayloadField(item.name),
+      String(Math.max(0, Number(item.tier ?? 0) || 0)),
+      String(Math.max(1, Math.ceil(Number(item.quantity ?? 1)))),
+    );
+  }
+  return fields.join("|");
 }
 
 function sanitizePayloadField(value) {
   return String(value ?? "").replace(/[\t\r\n]/g, " ").trim();
+}
+
+function encodePayloadField(value) {
+  return encodeURIComponent(sanitizePayloadField(value));
 }
 
 function cleanReagentName(name, fallback) {
@@ -2437,7 +2444,15 @@ function renderHtml(report) {
         if (shoppingButton) {
           event.preventDefault();
           event.stopPropagation();
-          addShoppingVariant(shoppingButton.dataset.shoppingKey || "");
+          if (addShoppingVariant(shoppingButton.dataset.shoppingKey || "")) {
+            const previousText = shoppingButton.textContent;
+            shoppingButton.textContent = "Added";
+            shoppingButton.disabled = true;
+            window.setTimeout(() => {
+              shoppingButton.textContent = previousText;
+              shoppingButton.disabled = false;
+            }, 900);
+          }
           return;
         }
 
@@ -2650,7 +2665,7 @@ function renderHtml(report) {
       const entry = shoppingVariants.get(key);
       if (!entry || !entry.variant.shoppingItems || !entry.variant.shoppingItems.length) {
         setTransientStatus("No optimized mats found for that row.");
-        return;
+        return false;
       }
 
       for (const item of entry.variant.shoppingItems) {
@@ -2667,6 +2682,7 @@ function renderHtml(report) {
       saveShoppingCart();
       renderShoppingCart();
       setTransientStatus("Added mats for " + (entry.row.displayName || entry.row.name) + ".");
+      return true;
     }
 
     function renderShoppingCart() {
@@ -2713,15 +2729,16 @@ function renderHtml(report) {
 
     function formatShoppingCartPayload(items) {
       const listName = "CraftPlan - " + (report.source.realm || "Mats");
-      return [
-        "CPE_AUCTIONATOR_LIST_V1",
-        "list\\t" + sanitizePayloadField(listName),
-        ...items.map((item) =>
-          "item\\t" + sanitizePayloadField(item.name) + "\\t" +
-          Math.max(0, Number(item.tier || 0)) + "\\t" +
-          Math.max(1, Math.ceil(Number(item.quantity || 1)))
-        ),
-      ].join("\\n");
+      const fields = ["CPE_AUCTIONATOR_LIST_V2", "list", encodePayloadField(listName)];
+      for (const item of items) {
+        fields.push(
+          "item",
+          encodePayloadField(item.name),
+          String(Math.max(0, Number(item.tier || 0))),
+          String(Math.max(1, Math.ceil(Number(item.quantity || 1))))
+        );
+      }
+      return fields.join("|");
     }
 
     function shoppingCartStorageKey() {
@@ -2744,6 +2761,10 @@ function renderHtml(report) {
       return String(value ?? "").replace(/[\\t\\r\\n]/g, " ").trim();
     }
 
+    function encodePayloadField(value) {
+      return encodeURIComponent(sanitizePayloadField(value));
+    }
+
     async function copyText(text) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         try {
@@ -2764,7 +2785,7 @@ function renderHtml(report) {
       const copied = document.execCommand("copy");
       textArea.remove();
       if (!copied) {
-        window.prompt("Copy this craft line:", text);
+        window.prompt("Copy this text:", text);
       }
     }
 

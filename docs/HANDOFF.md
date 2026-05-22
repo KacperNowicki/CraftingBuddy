@@ -46,7 +46,7 @@ The build script runs a packaged-exe smoke test after building. It starts `dist\
 Release updater check:
 
 ```powershell
-gh release create v0.3.7 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.7" --notes "Fixes packaged startup, large addon scans, and Goblin Exchange fallback market data."
+gh release create v0.3.8 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.8" --notes "Fixes Auctionator shopping-list paste reliability and reduces repeated reagent price lookups during large scans."
 ```
 
 The app updater reads GitHub Releases and expects the asset to be named `CraftPlanApp.exe`.
@@ -82,6 +82,7 @@ The generated report was opened with Playwright through a local static server on
 - Weekly concentration planning excludes very low movement markets by default.
 - Weekly concentration planning uses expected concentration after CraftSim-style Ingenuity refunds when the updated addon export includes those fields, and falls back to raw concentration for older scans.
 - Report cards show demand confidence and keep optimizer tables collapsed.
+- Auctionator shopping-list copies use a one-line `CPE_AUCTIONATOR_LIST_V2` payload with URL-encoded names so tabs/newlines cannot disappear between the browser and WoW. The addon still accepts older `V1` tab payloads.
 - CraftPlan Exporter queues Recipe Scan variant saves across short timer ticks and caches reagent price snapshots by CraftSim price-data table so large scans do not trip WoW's "script ran too long" watchdog. Players should wait for the "saved ingredient variants" message before typing `/reload`.
 
 ## Known Risks

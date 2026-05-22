@@ -8,7 +8,7 @@ Open app. Follow four steps. Get a report that says:
 
 > Craft X item for Y quantity and Z estimated profit today.
 
-Then the player can add mats to a shopping list, copy it, paste it into the addon, and create an Auctionator list.
+Then the player can add mats to a shopping list, copy it, paste the one-line payload into the addon, and create an Auctionator list.
 
 ## Friend-Friendly Flow
 
