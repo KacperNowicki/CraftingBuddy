@@ -46,7 +46,7 @@ The build script runs a packaged-exe smoke test after building. It starts `dist\
 Release updater check:
 
 ```powershell
-gh release create v0.3.8 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.8" --notes "Fixes Auctionator shopping-list paste reliability and reduces repeated reagent price lookups during large scans."
+gh release create v0.3.9 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.9" --notes "Opens the already-running app on a second launch instead of exiting on a busy local port."
 ```
 
 The app updater reads GitHub Releases and expects the asset to be named `CraftPlanApp.exe`.
@@ -73,6 +73,7 @@ The generated report was opened with Playwright through a local static server on
 - Auctionator remains untouched. CraftingBuddy can create shopping-list payloads that the addon passes into Auctionator.
 - The app writes local config/runtime/report files next to the executable/source checkout, not AppData.
 - The app updater stages release assets in `updates/` and only applies them from the packaged exe.
+- Starting `CraftPlanApp.exe` while another copy is already running opens the existing local app URL and exits cleanly instead of throwing a port-in-use error.
 - The local helper API requires a per-launch browser token and loopback host/origin checks. Reports served through the app receive that token for the **Regenerate** button; reports opened directly from disk cannot call the API.
 - The updater only accepts the exact release asset name `CraftPlanApp.exe`.
 - The selected icon is "Gem Spark" from `assets/icons/preview.html`; the addon minimap button uses the generated TGA in `CraftPlanExporter/Media/`.
