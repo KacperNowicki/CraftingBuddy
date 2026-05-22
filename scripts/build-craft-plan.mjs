@@ -669,6 +669,8 @@ function normalizeIngredientOptimization(optimization, context = {}) {
     totalEstimated,
     totalEstimatedFormatted: formatNumber(totalEstimated),
     truncated: Boolean(optimization.truncated),
+    timeBudgetExceeded: Boolean(optimization.timeBudgetExceeded),
+    timeBudgetMs: optimization.timeBudgetMs ?? null,
     includeOptional: Boolean(optimization.includeOptional),
     includeFinishing: Boolean(optimization.includeFinishing),
     bestProfitVariantRank: topVariant.rank ?? null,

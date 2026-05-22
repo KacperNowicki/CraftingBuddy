@@ -29,6 +29,7 @@ Important concepts:
 - `variantOptimization` stores tested ingredient quality paths.
 - `concentration` stores current/max concentration when Blizzard APIs expose it.
 - concentration records and variants can include `effectiveConcentrationCost`, `expectedIngenuityRefund`, `ingenuityRefundRate`, and `craftingStats`; the report uses these to spend expected concentration after Ingenuity refunds while keeping raw cost inspectable.
+- queued Recipe Scan variant exports can include `timeBudgetMs` and `timeBudgetExceeded` when the addon stops testing a recipe early to avoid WoW's script watchdog.
 
 ## Market Snapshot
 
@@ -42,6 +43,7 @@ Important fields:
 - seven-day average quantity
 - seven-day drop proxy
 - source/realm/region metadata
+- Goblin Exchange snapshots record whether current rows came from category `view-slices` or full `realm-state-shards`.
 
 The report uses movement and stock to estimate confidence:
 

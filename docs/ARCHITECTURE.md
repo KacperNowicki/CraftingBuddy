@@ -24,6 +24,7 @@ Responsibilities:
 - Show the CraftingBuddy minimap texture from `CraftPlanExporter/Media/CraftingBuddyIcon.tga`.
 - Ask CraftSim for recipe/profit/variant data.
 - Save a full tested variant blob to `CraftPlanExporterDB`.
+- Queue large Recipe Scan variant saves across short timer ticks so a scan does not block one WoW script callback.
 - Save player realm metadata and current concentration when available.
 - Accept shopping-list payloads from the report and create Auctionator lists.
 
@@ -84,7 +85,7 @@ Generated outputs:
 - `assets/icons/craftingbuddy-icon.ico` for the Windows executable.
 - `CraftPlanExporter/Media/CraftingBuddyIcon.tga` for the WoW minimap button.
 
-`scripts/build-exe.ps1` runs `pkg` and then stamps the `.ico` into `dist/CraftPlanApp.exe` with `resedit-cli`.
+`scripts/build-exe.ps1` stamps the `.ico` into a copied pkg Node base binary with `resedit-cli`, then runs `pkg` with `PKG_NODE_PATH` pointing at that branded base. Resource editors must not touch the finished pkg exe because pkg appends its snapshot after the PE image. The script finishes by launching the packaged exe with `CRAFTINGBUDDY_NO_OPEN=1` and failing the build if it exits immediately.
 
 ## Market Sources
 
@@ -96,7 +97,7 @@ Fallback source:
 
 - Goblin Exchange data, without a key.
 
-The app should keep the source visible in the UI and report because price/movement confidence depends on it.
+The Goblin Exchange scraper prefers category view artifacts when available and falls back to per-realm `realm-state` shards when the manifest only exposes the newer full-realm shard layout. The app should keep the source visible in the UI and report because price/movement confidence depends on it.
 
 ## Report Boundary
 

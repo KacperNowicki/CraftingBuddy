@@ -1,6 +1,6 @@
 # CraftingBuddy Handoff
 
-Last updated: 2026-05-19
+Last updated: 2026-05-22
 
 ## Current State
 
@@ -41,15 +41,17 @@ Before publishing a Windows build:
 npm run build:exe
 ```
 
+The build script runs a packaged-exe smoke test after building. It starts `dist\CraftPlanApp.exe` with `CRAFTINGBUDDY_NO_OPEN=1`, waits briefly, and fails if the executable exits immediately.
+
 Release updater check:
 
 ```powershell
-gh release create v0.3.6 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.6" --notes "Adds Ingenuity-aware concentration planning and report UX polish."
+gh release create v0.3.7 dist\CraftPlanApp.exe --title "CraftingBuddy v0.3.7" --notes "Fixes packaged startup, large addon scans, and Goblin Exchange fallback market data."
 ```
 
 The app updater reads GitHub Releases and expects the asset to be named `CraftPlanApp.exe`.
 
-`npm run build:exe` now stamps `assets/icons/craftingbuddy-icon.ico` into the Windows executable.
+`npm run build:exe` now stamps `assets/icons/craftingbuddy-icon.ico` into the pkg Node base binary before packaging. Do not edit resources on the finished pkg exe; that corrupts pkg's appended snapshot and makes the app close immediately at startup.
 
 Report generation from source expects a local WoW SavedVariables export:
 
@@ -76,17 +78,21 @@ The generated report was opened with Playwright through a local static server on
 - The selected icon is "Gem Spark" from `assets/icons/preview.html`; the addon minimap button uses the generated TGA in `CraftPlanExporter/Media/`.
 - Undermine API keys are optional and stored through Windows user-scope protection when possible.
 - Goblin Exchange remains a no-key fallback.
+- Goblin Exchange category view slices may be absent in the current artifact manifest. The scraper falls back to per-realm `realm-state` shards and stops once it has found the target catalog items.
 - Weekly concentration planning excludes very low movement markets by default.
 - Weekly concentration planning uses expected concentration after CraftSim-style Ingenuity refunds when the updated addon export includes those fields, and falls back to raw concentration for older scans.
 - Report cards show demand confidence and keep optimizer tables collapsed.
+- CraftPlan Exporter queues Recipe Scan variant saves across short timer ticks and caches reagent price snapshots by CraftSim price-data table so large scans do not trip WoW's "script ran too long" watchdog. Players should wait for the "saved ingredient variants" message before typing `/reload`.
 
 ## Known Risks
 
 - CraftSim API/UI internals can change. Keep addon integration defensive.
+- Large scan exports still depend on CraftSim recipe data staying valid while queued variant saves finish.
 - Market movement data is an estimate. UI should never promise guaranteed profit.
 - Multi-realm support depends on SavedVariables realm detection plus market-source coverage.
 - The current sample snapshots are Silvermoon EU development data, not universal defaults.
 - Packaging should be checked from a fresh clone before public releases.
+- Post-build resource editors can corrupt pkg executables if they change offsets after pkg has appended the app snapshot. Brand the pkg base binary first instead.
 - A release must include `CraftPlanApp.exe` or the updater will report that no installable asset exists.
 
 ## Next Useful Work

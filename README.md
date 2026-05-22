@@ -23,7 +23,7 @@ It is not a bot and it does not post auctions. It turns your own CraftSim scan p
 3. Click **Install addon**.
 4. In WoW, open the Auction House and run an Auctionator scan.
 5. Open CraftPlan Exporter from the minimap and press **Scan all + variants**.
-6. Type `/reload`.
+6. Wait for the **saved ingredient variants** message, then type `/reload`.
 7. Click **Generate report**.
 8. Follow the report from the top down.
 

@@ -18,7 +18,7 @@ Then the player can add mats to a shopping list, copy it, paste it into the addo
 4. In WoW, open the Auction House and run an Auctionator scan.
 5. Open CraftPlan Exporter from the minimap.
 6. Press **Scan all + variants**.
-7. Type `/reload`.
+7. Wait for the **saved ingredient variants** message, then type `/reload`.
 8. Press **Generate report** in CraftingBuddy.
 9. Open the report.
 10. Craft from the top down, respecting market confidence.

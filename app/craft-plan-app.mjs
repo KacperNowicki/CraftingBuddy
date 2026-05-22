@@ -71,7 +71,7 @@ server.listen(DEFAULT_PORT, "127.0.0.1", () => {
   const address = server.address();
   const url = `http://127.0.0.1:${address.port}/`;
   console.log(`CraftPlan app running at ${url}`);
-  openUrl(url);
+  if (process.env.CRAFTINGBUDDY_NO_OPEN !== "1") openUrl(url);
 });
 
 async function loadConfig() {

@@ -42,25 +42,19 @@ if (!realm?.connectedRealmId) {
 const connectedRealmId = Number(realm.connectedRealmId);
 const manifest = await getArtifact(`market/${REGION}/manifest.json`);
 const marketUpdatedAt = manifest?.market?.marketUpdatedAt || manifest?.generatedAt || new Date().toISOString();
-const viewFiles = resolveViewFiles(manifest, connectedRealmId, [
+const marketRows = await getMarketRows(manifest, connectedRealmId, targetById, [
   "consumables/food-drink",
   "consumables/potions",
   "consumables/flasks",
 ]);
-if (!viewFiles.length) {
-  throw new Error(`No Goblin Exchange consumables views found for connected realm ${connectedRealmId}.`);
-}
 
 const rowsByItemId = new Map();
-const viewArtifacts = await Promise.all(viewFiles.map((file) => getArtifact(file.file.path)));
-for (const artifact of viewArtifacts) {
-  for (const row of artifact.rows || []) {
-    const itemId = Number(row.itemId || row.id);
-    if (!targetById.has(itemId)) continue;
-    const previous = rowsByItemId.get(itemId);
-    if (!previous || Number(row.quantity || 0) > Number(previous.quantity || 0)) {
-      rowsByItemId.set(itemId, row);
-    }
+for (const row of marketRows.rows) {
+  const itemId = Number(row.itemId || row.id);
+  if (!targetById.has(itemId)) continue;
+  const previous = rowsByItemId.get(itemId);
+  if (!previous || Number(row.quantity || 0) > Number(previous.quantity || 0)) {
+    rowsByItemId.set(itemId, row);
   }
 }
 
@@ -161,7 +155,9 @@ const payload = {
     fallbackMovementItems,
     goblinHistoryArtifactRequests: historyCache.size,
     goblinHistoryArtifactLimit: historyLimit,
-    viewArtifactRequests: viewFiles.length,
+    marketArtifactSource: marketRows.source,
+    marketArtifactRequests: marketRows.requests,
+    viewArtifactRequests: marketRows.source === "view-slices" ? marketRows.requests : 0,
   },
   items: rows,
 };
@@ -240,6 +236,46 @@ function getFallbackMovementStats(item) {
   };
 }
 
+async function getMarketRows(manifest, connectedRealmId, targetById, categories) {
+  const viewFiles = resolveViewFiles(manifest, connectedRealmId, categories);
+  if (viewFiles.length) {
+    const artifacts = await Promise.all(viewFiles.map((file) => getArtifact(file.file.path)));
+    return {
+      source: "view-slices",
+      requests: viewFiles.length,
+      rows: artifacts.flatMap((artifact) => getArtifactRows(artifact)),
+    };
+  }
+
+  const realmStateFiles = resolveRealmStateFiles(manifest, connectedRealmId);
+  if (!realmStateFiles.length) {
+    throw new Error(`No Goblin Exchange market artifacts found for connected realm ${connectedRealmId}.`);
+  }
+
+  const rows = [];
+  const found = new Set();
+  let requests = 0;
+  for (const file of realmStateFiles) {
+    const artifact = await getArtifact(file.file.path);
+    requests += 1;
+
+    for (const row of getArtifactRows(artifact)) {
+      const itemId = Number(row.itemId || row.id);
+      if (!targetById.has(itemId)) continue;
+      rows.push(row);
+      found.add(itemId);
+    }
+
+    if (found.size >= targetById.size) break;
+  }
+
+  return {
+    source: "realm-state-shards",
+    requests,
+    rows,
+  };
+}
+
 function resolveViewFiles(manifest, connectedRealmId, categories) {
   const files = Array.isArray(manifest?.market?.viewSlices?.files) ? manifest.market.viewSlices.files : [];
   const wanted = new Set(categories.map((category) => String(category).toLowerCase()));
@@ -248,6 +284,39 @@ function resolveViewFiles(manifest, connectedRealmId, categories) {
     .filter((file) => String(file.sort || "").toLowerCase() === "available_desc")
     .filter((file) => wanted.has(String(file.filters?.category || "").toLowerCase()))
     .sort((a, b) => String(a.filters?.category || "").localeCompare(String(b.filters?.category || "")));
+}
+
+function resolveRealmStateFiles(manifest, connectedRealmId) {
+  const files = Array.isArray(manifest?.market?.realmStates?.files) ? manifest.market.realmStates.files : [];
+  const realmState = files.find((file) => Number(file.connectedRealmId) === Number(connectedRealmId));
+  return (realmState?.shards || [])
+    .filter((shard) => shard?.file?.path)
+    .sort((a, b) => Number(a.rowStart ?? 0) - Number(b.rowStart ?? 0));
+}
+
+function getArtifactRows(artifact) {
+  if (Array.isArray(artifact?.rows)) return artifact.rows;
+  return expandColumnRows(artifact);
+}
+
+function expandColumnRows(artifact) {
+  const columns = artifact?.columns;
+  if (!columns || typeof columns !== "object") return [];
+
+  const rowCount = Object.values(columns)
+    .filter(Array.isArray)
+    .reduce((max, column) => Math.max(max, column.length), 0);
+  const rows = [];
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const row = {};
+    for (const [key, column] of Object.entries(columns)) {
+      if (Array.isArray(column) && index < column.length) row[key] = column[index];
+    }
+    rows.push(row);
+  }
+
+  return rows;
 }
 
 function resolveHistoryPaths(manifest, itemId) {

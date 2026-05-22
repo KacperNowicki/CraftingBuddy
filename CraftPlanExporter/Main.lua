@@ -5,7 +5,12 @@ Exporter.hooked = false
 Exporter.panel = nil
 Exporter.minimapButton = nil
 Exporter.pendingRecipeScanVariants = false
+Exporter.recipeScanVariantQueue = nil
+Exporter.recipeScanVariantScheduled = false
 Exporter.lastStatus = "Ready."
+
+local RECIPE_SCAN_VARIANT_DELAY_SECONDS = 0.05
+local VARIANT_RECIPE_TIME_BUDGET_MS = 75
 
 local function Print(message)
     DEFAULT_CHAT_FRAME:AddMessage("|cff3cc6a2CraftPlan Exporter:|r " .. tostring(message))
@@ -188,6 +193,20 @@ local function SafeNumber(value, fallback)
     return value
 end
 
+local function Milliseconds()
+    if debugprofilestop then return debugprofilestop() end
+    if GetTime then return GetTime() * 1000 end
+    return 0
+end
+
+local function IsTimeBudgetExceeded(startMs, budgetMs)
+    budgetMs = tonumber(budgetMs) or 0
+    if budgetMs <= 0 or not startMs then return false end
+    return (Milliseconds() - startMs) >= budgetMs
+end
+
+local recipePriceInfoCaches = setmetatable({}, { __mode = "k" })
+
 local function GetItemSnapshot(item)
     if not item then return nil end
 
@@ -199,17 +218,32 @@ local function GetItemSnapshot(item)
 end
 
 local function GetPriceInfo(recipeData, itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+
     local priceData = recipeData and recipeData.priceData
+    if not priceData then return nil end
+
+    local cache = recipePriceInfoCaches[priceData]
+    if not cache then
+        cache = {}
+        recipePriceInfoCaches[priceData] = cache
+    elseif cache[itemID] ~= nil then
+        return cache[itemID]
+    end
+
     local priceInfo = priceData and priceData.reagentPriceInfos and priceData.reagentPriceInfos[itemID]
     if not priceInfo then return nil end
 
-    return {
+    local result = {
         itemPrice = priceInfo.itemPrice,
         source = priceInfo.priceInfo and priceInfo.priceInfo.priceSource,
         noAHPriceFound = priceInfo.priceInfo and priceInfo.priceInfo.noAHPriceFound,
         isExpectedCost = priceInfo.priceInfo and priceInfo.priceInfo.isExpectedCost,
         isOverride = priceInfo.priceInfo and priceInfo.priceInfo.isOverride,
     }
+    cache[itemID] = result
+    return result
 end
 
 local function GetOptionalReagentSnapshot(recipeData, reagent)
@@ -732,6 +766,9 @@ function Exporter:CalculateIngredientVariants(recipeData, options)
     local topN = math.max(1, tonumber(options.topN) or 25)
     local includeOptional = not not options.includeOptional
     local includeFinishing = not not options.includeFinishing
+    local timeBudgetMs = math.max(0, tonumber(options.timeBudgetMs) or 0)
+    local startedMs = Milliseconds()
+    local timeBudgetExceeded = false
 
     if not recipeData or not recipeData.Copy then
         return nil, "RecipeData cannot be copied."
@@ -758,6 +795,11 @@ function Exporter:CalculateIngredientVariants(recipeData, options)
             stopped = true
             return
         end
+        if IsTimeBudgetExceeded(startedMs, timeBudgetMs) then
+            stopped = true
+            timeBudgetExceeded = true
+            return
+        end
 
         tested = tested + 1
         local ok, variant = pcall(function()
@@ -770,6 +812,11 @@ function Exporter:CalculateIngredientVariants(recipeData, options)
             table.insert(allVariants, variant)
         else
             failed = failed + 1
+        end
+
+        if IsTimeBudgetExceeded(startedMs, timeBudgetMs) then
+            stopped = true
+            timeBudgetExceeded = true
         end
     end
 
@@ -818,6 +865,8 @@ function Exporter:CalculateIngredientVariants(recipeData, options)
         totalEstimated = totalEstimated,
         testedCount = tested,
         failedCount = failed,
+        timeBudgetMs = timeBudgetMs > 0 and timeBudgetMs or nil,
+        timeBudgetExceeded = timeBudgetExceeded,
         truncated = totalEstimated > tested,
         savedCount = #allVariants,
         variants = allVariants,
@@ -924,12 +973,15 @@ function Exporter:SaveRecipe(recipeData, source)
 end
 
 function Exporter:SaveRecipeVariants(recipeData, source, options)
+    options = options or {}
     local ok, record = self:SaveRecipe(recipeData, source or "ingredient-variants")
     if not ok or not record then return false end
 
     local variantOptimization, errorMessage = self:CalculateIngredientVariants(recipeData, options)
     if not variantOptimization then
-        Print(errorMessage or "variant calculation failed.")
+        if not options.quiet then
+            Print(errorMessage or "variant calculation failed.")
+        end
         return false
     end
 
@@ -948,11 +1000,14 @@ function Exporter:SaveRecipeVariants(recipeData, source, options)
         testedCount = variantOptimization.testedCount,
         totalEstimated = variantOptimization.totalEstimated,
         truncated = variantOptimization.truncated,
+        timeBudgetExceeded = variantOptimization.timeBudgetExceeded,
     })
 
-    Print("tested " .. tostring(variantOptimization.testedCount) .. "/" ..
-        tostring(variantOptimization.totalEstimated) .. " ingredient variant(s) for " ..
-        tostring(record.recipeName or record.recipeID) .. ".")
+    if not options.quiet then
+        Print("tested " .. tostring(variantOptimization.testedCount) .. "/" ..
+            tostring(variantOptimization.totalEstimated) .. " ingredient variant(s) for " ..
+            tostring(record.recipeName or record.recipeID) .. ".")
+    end
     return true, record
 end
 
@@ -1460,16 +1515,116 @@ function Exporter:ExportRecipeScanVariants(row, message)
         message = self:GetVariantOptionsMessage(5000)
     end
 
-    local options = ParseVariantOptions(message, 5000)
-    local count = 0
+    return self:QueueRecipeScanVariants(row, message)
+end
+
+local function CopyOptions(options)
+    local copy = {}
+    for key, value in pairs(options or {}) do
+        copy[key] = value
+    end
+    return copy
+end
+
+function Exporter:QueueRecipeScanVariants(row, message)
+    if not row or not row.currentResults then
+        Print("No Recipe Scan results found.")
+        return 0
+    end
+
+    local results = {}
     for _, recipeData in ipairs(row.currentResults) do
-        if self:SaveRecipeVariants(recipeData, "recipe-scan-variants", options) then
-            count = count + 1
+        table.insert(results, recipeData)
+    end
+
+    if #results == 0 then
+        Print("No Recipe Scan result recipes found.")
+        return 0
+    end
+
+    local options = ParseVariantOptions(message, 5000)
+    options.timeBudgetMs = VARIANT_RECIPE_TIME_BUDGET_MS
+    options.quiet = true
+
+    self.recipeScanVariantQueue = self.recipeScanVariantQueue or { jobs = {} }
+    table.insert(self.recipeScanVariantQueue.jobs, {
+        results = results,
+        index = 1,
+        saved = 0,
+        failed = 0,
+        timeLimited = 0,
+        total = #results,
+        source = "recipe-scan-variants",
+        options = options,
+    })
+
+    Print("queued ingredient variants for " .. tostring(#results) .. " Recipe Scan result(s). Wait for the saved message, then type /reload.")
+    self:ScheduleRecipeScanVariantQueue()
+    return #results
+end
+
+function Exporter:ScheduleRecipeScanVariantQueue()
+    if self.recipeScanVariantScheduled then return end
+    self.recipeScanVariantScheduled = true
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(RECIPE_SCAN_VARIANT_DELAY_SECONDS, function()
+            Exporter.recipeScanVariantScheduled = false
+            Exporter:ProcessRecipeScanVariantQueue()
+        end)
+    else
+        self.recipeScanVariantScheduled = false
+        self:ProcessRecipeScanVariantQueue()
+    end
+end
+
+function Exporter:FinishRecipeScanVariantJob(job)
+    local message = "saved ingredient variants for " .. tostring(job.saved) .. "/" ..
+        tostring(job.total) .. " Recipe Scan result(s)"
+    if job.failed > 0 then
+        message = message .. "; " .. tostring(job.failed) .. " failed"
+    end
+    if job.timeLimited > 0 then
+        message = message .. "; " .. tostring(job.timeLimited) .. " time-limited"
+    end
+    Print(message .. ". Type /reload before generating the report.")
+end
+
+function Exporter:ProcessRecipeScanVariantQueue()
+    local queue = self.recipeScanVariantQueue
+    if not queue or not queue.jobs or #queue.jobs == 0 then
+        self.recipeScanVariantQueue = nil
+        self:RefreshPanel()
+        return
+    end
+
+    local job = queue.jobs[1]
+    local recipeData = job.results[job.index]
+    if not recipeData then
+        self:FinishRecipeScanVariantJob(job)
+        table.remove(queue.jobs, 1)
+        self:ScheduleRecipeScanVariantQueue()
+        return
+    end
+
+    local options = CopyOptions(job.options)
+    local ok, saved, record = pcall(self.SaveRecipeVariants, self, recipeData, job.source, options)
+    if ok and saved then
+        job.saved = job.saved + 1
+        local optimization = record and record.variantOptimization
+        if optimization and optimization.timeBudgetExceeded then
+            job.timeLimited = job.timeLimited + 1
+        end
+    else
+        job.failed = job.failed + 1
+        if not ok then
+            Print("variant save failed: " .. tostring(saved))
         end
     end
 
-    Print("saved ingredient variants for " .. tostring(count) .. " Recipe Scan result(s).")
-    return count
+    job.index = job.index + 1
+    self:SetStatus("Saving variants " .. tostring(job.index - 1) .. "/" .. tostring(job.total) .. "...")
+    self:ScheduleRecipeScanVariantQueue()
 end
 
 function Exporter:OpenCraftSimRecipeScan()
@@ -1550,11 +1705,12 @@ end
 
 function Exporter:OnRecipeScanComplete(row, source)
     self:SaveCurrentConcentration(true)
-    self:ExportRecipeScanRow(row, source or "recipe-scan-complete")
 
     local db = EnsureDB()
     if self.pendingRecipeScanVariants or db.settings.autoVariantsOnRecipeScan then
-        self:ExportRecipeScanVariants(row, self:GetVariantOptionsMessage(5000))
+        self:QueueRecipeScanVariants(row, self:GetVariantOptionsMessage(5000))
+    else
+        self:ExportRecipeScanRow(row, source or "recipe-scan-complete")
     end
 
     local CraftSim = self:GetCraftSim()
